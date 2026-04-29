@@ -1,0 +1,186 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../backend/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  USER
+  MANAGER
+  ADMIN
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  name         String
+  email        String    @unique
+  passwordHash String
+  passwordSalt String
+  role         Role      @default(USER)
+  sessions     Session[]
+  changeRequests ManagementChangeRequest[]
+  contacts     Contact[]
+  studyInfos   StudyInfo[]
+  modules      Module[]
+  lessons      Lesson[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Session {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique
+  activeRole Role
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model PendingAccount {
+  id                    Int      @id @default(autoincrement())
+  name                  String
+  email                 String   @unique
+  passwordHash          String
+  passwordSalt          String
+  role                  Role     @default(USER)
+  confirmationTokenHash String   @unique
+  requestedById         Int?
+  createdAt             DateTime @default(now())
+  expiresAt             DateTime
+}
+
+enum ChangeAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum ChangeEntity {
+  CONTACT
+  DEADLINE
+  MEAL
+  LESSON
+  STUDY_INFO
+}
+
+enum ChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model ManagementChangeRequest {
+  id          Int          @id @default(autoincrement())
+  action      ChangeAction
+  entity      ChangeEntity
+  targetId    Int?
+  payloadJson String
+  status      ChangeStatus @default(PENDING)
+  requestedById Int
+  requestedBy   User       @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewedById Int?
+  reviewedAt   DateTime?
+  reviewNote   String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model Contact {
+  id        Int      @id @default(autoincrement())
+  ownerId   Int?
+  owner     User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String
+  role      String
+  email     String
+  phone     String?
+  room      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Canteen {
+  id        Int        @id @default(autoincrement())
+  name      String
+  location  String?
+  meals     MealPlan[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model MealPlan {
+  id             Int      @id @default(autoincrement())
+  canteenId      Int
+  canteen        Canteen  @relation(fields: [canteenId], references: [id], onDelete: Cascade)
+  day            String
+  date           DateTime?
+  mainDish       String
+  vegetarianDish String?
+  priceCents     Int
+  currency       String   @default("EUR")
+  isPersonal     Boolean  @default(false)
+  source         String   @default("MANUAL")
+  sourceKey      String?  @unique
+  importedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Deadline {
+  id          Int      @id @default(autoincrement())
+  title       String
+  date        DateTime
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model StudyInfo {
+  id        Int      @id @default(autoincrement())
+  ownerId   Int?
+  owner     User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  category  String
+  title     String
+  content   String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Module {
+  id        Int      @id @default(autoincrement())
+  ownerId   Int?
+  owner     User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title     String
+  credits   String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ScheduleDay {
+  id        Int      @id @default(autoincrement())
+  day       String   @unique
+  sortOrder Int      @default(0)
+  lessons   Lesson[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Lesson {
+  id            Int         @id @default(autoincrement())
+  ownerId       Int?
+  owner         User?       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  scheduleDayId Int
+  scheduleDay   ScheduleDay @relation(fields: [scheduleDayId], references: [id], onDelete: Cascade)
+  startTime     String
+  endTime       String
+  title         String
+  room          String?
+  lecturer      String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}

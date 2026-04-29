@@ -25,6 +25,30 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Backend
+
+StudentGo now includes a local Node.js backend with Express and Prisma. The default database is SQLite and is configured through `DATABASE_URL` in `.env`.
+
+```bash
+npm run db:generate
+npm run db:push
+npm run db:seed
+npm run backend:dev
+```
+
+The backend runs on `http://localhost:3001` by default. Available starter endpoints:
+
+- `GET /health`
+- `GET /api/contacts`
+- `POST /api/contacts`
+- `GET /api/canteens`
+- `GET /api/meals`
+- `POST /api/meals`
+- `GET /api/deadlines`
+- `POST /api/deadlines`
+- `GET /api/study-info`
+- `GET /api/schedule`
+
 ## Get a fresh project
 
 When you're ready, run:

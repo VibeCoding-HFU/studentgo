@@ -31,7 +31,15 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+
+# backend data and generated Prisma client
+dev.db
+dev.db-*
+prisma/dev.db
+prisma/dev.db-*
+backend/generated/
 
 # typescript
 *.tsbuildinfo
@@ -44,3 +52,5 @@ app-example
 
 .vscode/
 .codex
+/app/generated/prisma
+UseCases.pdf
