@@ -12,6 +12,7 @@ const scryptAsync = promisify(scrypt);
 const SESSION_DAYS = 7;
 const CONFIRMATION_HOURS = 24;
 const SWFR_MENSA_URL = "https://www.swfr.de/essen/mensen-cafes-speiseplaene/mensa-furtwangen";
+const STARPLAN_BASE_URL = "https://splan.hs-furtwangen.de/starplan";
 const DAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
 type Role = "USER" | "MANAGER" | "ADMIN";
@@ -130,6 +131,7 @@ async function createPendingAccount(data: {
   email: string;
   name: string;
   password: string;
+  publicKeyJson?: string | null;
   requestedById?: number | null;
   role: Role;
 }) {
@@ -151,6 +153,7 @@ async function createPendingAccount(data: {
       name: data.name,
       passwordHash: passwordData.hash,
       passwordSalt: passwordData.salt,
+      publicKeyJson: data.publicKeyJson ?? null,
       requestedById: data.requestedById ?? null,
       role: data.role,
     },
@@ -177,6 +180,7 @@ async function confirmPendingAccount(token: string) {
         name: pendingAccount.name,
         passwordHash: pendingAccount.passwordHash,
         passwordSalt: pendingAccount.passwordSalt,
+        publicKeyJson: pendingAccount.publicKeyJson,
         role: pendingAccount.role,
       },
     });
@@ -186,11 +190,12 @@ async function confirmPendingAccount(token: string) {
   });
 }
 
-function publicUser(user: { id: number; name: string; email: string; role: Role }) {
+function publicUser(user: { id: number; name: string; email: string; publicKeyJson: string | null; role: Role }) {
   return {
     id: user.id,
     name: user.name,
     email: user.email,
+    publicKeyJson: user.publicKeyJson,
     role: user.role,
   };
 }
@@ -287,6 +292,9 @@ function studyInfoData(payload: Record<string, unknown>) {
   return {
     category: typeof payload.category === "string" && payload.category.trim() ? payload.category.trim() : "allgemein",
     content: typeof payload.content === "string" ? payload.content.trim() : "",
+    encryptedKey: typeof payload.encryptedKey === "string" && payload.encryptedKey.trim() ? payload.encryptedKey.trim() : null,
+    encryptedPayload: typeof payload.encryptedPayload === "string" && payload.encryptedPayload.trim() ? payload.encryptedPayload.trim() : null,
+    encryptionIv: typeof payload.encryptionIv === "string" && payload.encryptionIv.trim() ? payload.encryptionIv.trim() : null,
     sortOrder: Number(payload.sortOrder ?? 0),
     title: typeof payload.title === "string" ? payload.title.trim() : "",
   };
@@ -312,18 +320,27 @@ function startOfWeek(date = new Date()) {
   return start;
 }
 
-function endOfWeek(date = new Date()) {
-  const end = startOfWeek(date);
-  end.setDate(end.getDate() + 7);
-  return end;
+function toDateInput(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
-function stripHtml(value: string) {
+function parseDateInput(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function parseWeekStart(value: unknown) {
+  const input = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? parseDateInput(value.trim()) : new Date();
+  return startOfWeek(Number.isNaN(input.getTime()) ? new Date() : input);
+}
+
+function decodeHtml(value: string) {
   return value
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)))
     .replace(/&amp;/g, "&")
     .replace(/&auml;/g, "ä")
     .replace(/&ouml;/g, "ö")
@@ -331,7 +348,21 @@ function stripHtml(value: string) {
     .replace(/&Auml;/g, "Ä")
     .replace(/&Ouml;/g, "Ö")
     .replace(/&Uuml;/g, "Ü")
-    .replace(/&szlig;/g, "ß")
+    .replace(/&szlig;/g, "ß");
+}
+
+function endOfWeek(date = new Date()) {
+  const end = startOfWeek(date);
+  end.setDate(end.getDate() + 7);
+  return end;
+}
+
+function stripHtml(value: string) {
+  return decodeHtml(value)
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -470,8 +501,16 @@ function scheduleDailySwfrImport() {
 }
 
 function lessonData(payload: Record<string, unknown>, scheduleDayId: number) {
+  const isRecurring = payload.isRecurring === true;
+
   return {
+    date: !isRecurring && typeof payload.date === "string" && payload.date.trim() ? new Date(payload.date) : null,
+    description: typeof payload.description === "string" && payload.description.trim() ? payload.description.trim() : null,
     endTime: typeof payload.endTime === "string" ? payload.endTime.trim() : "",
+    encryptedKey: typeof payload.encryptedKey === "string" && payload.encryptedKey.trim() ? payload.encryptedKey.trim() : null,
+    encryptedPayload: typeof payload.encryptedPayload === "string" && payload.encryptedPayload.trim() ? payload.encryptedPayload.trim() : null,
+    encryptionIv: typeof payload.encryptionIv === "string" && payload.encryptionIv.trim() ? payload.encryptionIv.trim() : null,
+    isRecurring,
     lecturer: typeof payload.lecturer === "string" && payload.lecturer.trim() ? payload.lecturer.trim() : null,
     room: typeof payload.room === "string" && payload.room.trim() ? payload.room.trim() : null,
     scheduleDayId,
@@ -505,6 +544,220 @@ async function getOrCreateCanteen(name: string, transaction: typeof prisma = pri
   }
 
   return transaction.canteen.create({ data: { name: cleanName } });
+}
+
+async function fetchStarPlanJson<T>(path: string): Promise<T[]> {
+  const response = await fetch(`${STARPLAN_BASE_URL}/${path}`);
+
+  if (!response.ok) {
+    throw new Error(`StarPlan request failed with status ${response.status}`);
+  }
+
+  const text = await response.text();
+  const parsed = JSON.parse(text) as [T[]] | T[];
+  return Array.isArray(parsed[0]) ? (parsed[0] as T[]) : (parsed as T[]);
+}
+
+type StarPlanUnit = { id: number; name: string; shortname: string; startdate?: string; enddate?: string };
+type StarPlanOrgGroup = { id: number; name: string; shortname: string };
+type StarPlanPlanningGroup = { id: number; name: string; shortname: string };
+
+async function getStarPlanOptions(facultyId?: string, semesterId?: string) {
+  const semesters = await fetchStarPlanJson<StarPlanUnit>("json?m=getpus");
+  const currentSemester = semesters.find((semester) => String(semester.id) === semesterId) ?? semesters[0];
+  const faculties = await fetchStarPlanJson<StarPlanOrgGroup>(
+    `json?m=getogs${currentSemester ? `&pu=${currentSemester.id}` : ""}`,
+  );
+  const groups = currentSemester && facultyId
+    ? await fetchStarPlanJson<StarPlanPlanningGroup>(`json?m=getPgsExt&pu=${currentSemester.id}&og=${facultyId}`).catch(() => [])
+    : [];
+
+  return {
+    faculties: faculties.map((faculty) => ({ ...faculty, groups: [] })),
+    groups: groups.map((group) => ({ id: group.shortname, name: group.name, shortname: group.shortname })),
+    semesters: semesters.map((semester) => ({
+      enddate: semester.enddate,
+      id: semester.id,
+      name: semester.name,
+      shortname: semester.shortname,
+      startdate: semester.startdate,
+    })),
+    specializations: [
+      { id: "standard", name: "Standard" },
+      { id: "all", name: "Alle Vertiefungen" },
+    ],
+  };
+}
+
+function minutesToTime(minutes: number) {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function invitationLessonData(lesson: {
+  date: Date | null;
+  description: string | null;
+  endTime: string;
+  encryptedKey: string | null;
+  encryptedPayload: string | null;
+  encryptionIv: string | null;
+  isRecurring: boolean;
+  lecturer: string | null;
+  room: string | null;
+  scheduleDayId: number;
+  startTime: string;
+  title: string;
+}) {
+  return {
+    date: lesson.date,
+    description: lesson.description,
+    endTime: lesson.endTime,
+    encryptedKey: lesson.encryptedKey,
+    encryptedPayload: lesson.encryptedPayload,
+    encryptionIv: lesson.encryptionIv,
+    isRecurring: lesson.isRecurring,
+    lecturer: lesson.lecturer,
+    room: lesson.room,
+    scheduleDayId: lesson.scheduleDayId,
+    startTime: lesson.startTime,
+    title: lesson.title,
+  };
+}
+
+function parseStarPlanTimetable(html: string, weekStart: Date) {
+  const dayCells = [...html.matchAll(/ttweekdaycell[^>]*left:(-?\d+)px[\s\S]*?data-date="(\d{4}-\d{2}-\d{2})"/gi)].map((match) => ({
+    date: match[2],
+    left: Number(match[1]),
+  }));
+  const events = [...html.matchAll(/<div style="position:absolute;([^"]+)" class="ttevent[^"]*"[\s\S]*?<div class="tooltip">([\s\S]*?)<\/div>([\s\S]*?)<div class="ttIconContainer">/gi)];
+
+  return events
+    .map((match) => {
+      const style = match[1];
+      const left = Number(style.match(/left:(-?\d+)px/)?.[1] ?? 0);
+      const dateCell = dayCells.reduce((closest, current) => (Math.abs(current.left - left) < Math.abs(closest.left - left) ? current : closest), dayCells[0]);
+      const lines = match[2].split(/<br\s*\/?>/i).map((line) => stripHtml(line)).filter(Boolean);
+      const time = lines.find((line) => /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(line));
+
+      if (!dateCell || !time) {
+        return null;
+      }
+
+      const [startTime, endTime] = time.split("-");
+      const date = parseDateInput(dateCell.date);
+      const day = DAY_NAMES[date.getDay()];
+
+      if (date < weekStart || date >= endOfWeek(weekStart)) {
+        return null;
+      }
+
+      return {
+        date: dateCell.date,
+        day,
+        endTime,
+        lecturer: lines[1] ?? null,
+        room: lines[3] ?? null,
+        startTime,
+        title: lines[0] ?? "Termin",
+      };
+    })
+    .filter((event): event is NonNullable<typeof event> => Boolean(event));
+}
+
+async function importStarPlanSchedule(input: {
+  facultyId: string;
+  facultyName: string;
+  semesterId: string;
+  semesterName: string;
+  specialization?: string | null;
+  studyGroup: string;
+  userId: number;
+  weekStart: Date;
+}) {
+  const cacheKey = [
+    input.semesterId,
+    input.facultyId,
+    input.studyGroup,
+    input.specialization ?? "standard",
+    toDateInput(input.weekStart),
+  ].join(":");
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const existingCache = await prisma.scheduleImportCache.findUnique({ where: { cacheKey } });
+  let parsedLessons: ReturnType<typeof parseStarPlanTimetable>;
+
+  if (existingCache && existingCache.importedAt >= todayStart) {
+    parsedLessons = JSON.parse(existingCache.payloadJson) as ReturnType<typeof parseStarPlanTimetable>;
+  } else {
+    const params = new URLSearchParams({
+      dfc: toDateInput(input.weekStart),
+      m: "getTT",
+      og: input.facultyId,
+      pg: input.studyGroup,
+      pu: input.semesterId,
+      sa: "false",
+      sd: "true",
+      sel: "pg",
+    });
+    const response = await fetch(`${STARPLAN_BASE_URL}/json?${params.toString()}`);
+
+    if (!response.ok) {
+      throw new Error(`StarPlan timetable failed with status ${response.status}`);
+    }
+
+    parsedLessons = parseStarPlanTimetable(await response.text(), input.weekStart);
+    await prisma.scheduleImportCache.upsert({
+      create: {
+        cacheKey,
+        facultyId: input.facultyId,
+        facultyName: input.facultyName,
+        importedAt: new Date(),
+        payloadJson: JSON.stringify(parsedLessons),
+        semesterId: input.semesterId,
+        semesterName: input.semesterName,
+        specialization: input.specialization,
+        studyGroup: input.studyGroup,
+        weekStart: input.weekStart,
+      },
+      update: {
+        importedAt: new Date(),
+        payloadJson: JSON.stringify(parsedLessons),
+      },
+      where: { cacheKey },
+    });
+  }
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.lesson.deleteMany({
+      where: {
+        ownerId: input.userId,
+        source: "STARPLAN",
+        sourceKey: { startsWith: `${cacheKey}:` },
+      },
+    });
+
+    for (const lesson of parsedLessons) {
+      const day = await getOrCreateScheduleDay(lesson.day, transaction as typeof prisma);
+      await transaction.lesson.create({
+        data: {
+          date: new Date(`${lesson.date}T12:00:00`),
+          endTime: lesson.endTime,
+          importedAt: new Date(),
+          lecturer: lesson.lecturer,
+          ownerId: input.userId,
+          room: lesson.room,
+          scheduleDayId: day.id,
+          source: "STARPLAN",
+          sourceKey: `${cacheKey}:${lesson.date}:${lesson.startTime}:${lesson.title}:${lesson.room ?? ""}`,
+          startTime: lesson.startTime,
+          title: lesson.title,
+        },
+      });
+    }
+  });
+
+  return parsedLessons.length;
 }
 
 async function applyManagementChange(requestId: number, adminId: number) {
@@ -619,6 +872,7 @@ app.post("/api/auth/register", async (request, response) => {
   const name = normalizeName(request.body.name);
   const email = normalizeEmail(request.body.email);
   const password = typeof request.body.password === "string" ? request.body.password : "";
+  const publicKeyJson = typeof request.body.publicKeyJson === "string" ? request.body.publicKeyJson : null;
   const role = normalizeRole(request.body.role);
 
   if (!name || !email || password.length < 8) {
@@ -634,7 +888,7 @@ app.post("/api/auth/register", async (request, response) => {
     return;
   }
 
-  const pendingAccount = await createPendingAccount({ email, name, password, role });
+  const pendingAccount = await createPendingAccount({ email, name, password, publicKeyJson, role });
 
   response.status(202).json({
     email: pendingAccount.email,
@@ -716,6 +970,64 @@ app.post("/api/auth/logout", async (request, response) => {
   response.status(204).send();
 });
 
+app.get("/api/users/search", async (request, response) => {
+  const session = await getSession(request);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  const query = typeof request.query.q === "string" ? request.query.q.trim() : "";
+
+  if (query.length < 2) {
+    response.json([]);
+    return;
+  }
+
+  const users = await prisma.user.findMany({
+    orderBy: { name: "asc" },
+    select: {
+      email: true,
+      id: true,
+      name: true,
+      publicKeyJson: true,
+    },
+    take: 12,
+    where: {
+      id: { not: session.userId },
+      OR: [
+        { email: { contains: query } },
+        { name: { contains: query } },
+      ],
+    },
+  });
+
+  response.json(users);
+});
+
+app.patch("/api/account/public-key", async (request, response) => {
+  const session = await getSession(request);
+  const publicKeyJson = typeof request.body.publicKeyJson === "string" ? request.body.publicKeyJson : "";
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (!publicKeyJson.trim()) {
+    response.status(400).json({ error: "Public key is required." });
+    return;
+  }
+
+  const user = await prisma.user.update({
+    data: { publicKeyJson },
+    where: { id: session.userId },
+  });
+
+  response.json(publicUser(user));
+});
+
 app.get("/api/admin/summary", requireAdmin, async (_request, response) => {
   const [users, sessions, contacts, meals, deadlines, modules, pendingRequests] = await Promise.all([
     prisma.user.count(),
@@ -768,6 +1080,7 @@ app.post("/api/admin/users", requireAdmin, async (request, response) => {
     email,
     name,
     password,
+    publicKeyJson: typeof request.body.publicKeyJson === "string" ? request.body.publicKeyJson : null,
     requestedById: session?.userId,
     role,
   });
@@ -1045,6 +1358,167 @@ app.post("/api/deadlines", async (request, response) => {
   response.status(201).json(deadline);
 });
 
+app.get("/api/todos", async (request, response) => {
+  const session = await getSession(request);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  const todos = await prisma.todo.findMany({
+    include: {
+      subtasks: {
+        orderBy: { createdAt: "asc" },
+      },
+    },
+    orderBy: [
+      { completedAt: "desc" },
+      { createdAt: "desc" },
+    ],
+    where: { ownerId: session.userId },
+  });
+
+  response.json(todos);
+});
+
+app.post("/api/todos", async (request, response) => {
+  const session = await getSession(request);
+  const title = typeof request.body.title === "string" ? request.body.title.trim() : "";
+  const description = typeof request.body.description === "string" && request.body.description.trim() ? request.body.description.trim() : null;
+  const subtasks = Array.isArray(request.body.subtasks)
+    ? request.body.subtasks
+        .map((subtask: unknown) => (typeof subtask === "string" ? subtask.trim() : ""))
+        .filter(Boolean)
+    : [];
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (!title) {
+    response.status(400).json({ error: "Todo title is required." });
+    return;
+  }
+
+  const todo = await prisma.todo.create({
+    data: {
+      description,
+      ownerId: session.userId,
+      subtasks: {
+        create: subtasks.map((subtask: string) => ({ title: subtask })),
+      },
+      title,
+    },
+    include: {
+      subtasks: {
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  });
+
+  response.status(201).json(todo);
+});
+
+app.post("/api/todos/:id/complete", async (request, response) => {
+  const session = await getSession(request);
+  const id = Number(request.params.id);
+  const completedAt = new Date();
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (Number.isNaN(id)) {
+    response.status(400).json({ error: "Invalid todo id." });
+    return;
+  }
+
+  const existingTodo = await prisma.todo.findFirst({ where: { id, ownerId: session.userId } });
+
+  if (!existingTodo) {
+    response.status(404).json({ error: "Todo not found." });
+    return;
+  }
+
+  const todo = await prisma.$transaction(async (transaction) => {
+    await transaction.todoSubtask.updateMany({
+      data: { completedAt },
+      where: {
+        completedAt: null,
+        todoId: id,
+      },
+    });
+
+    return transaction.todo.update({
+      data: { completedAt },
+      include: {
+        subtasks: {
+          orderBy: { createdAt: "asc" },
+        },
+      },
+      where: { id },
+    });
+  });
+
+  response.json(todo);
+});
+
+app.post("/api/todos/:todoId/subtasks/:subtaskId/toggle", async (request, response) => {
+  const session = await getSession(request);
+  const todoId = Number(request.params.todoId);
+  const subtaskId = Number(request.params.subtaskId);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (Number.isNaN(todoId) || Number.isNaN(subtaskId)) {
+    response.status(400).json({ error: "Invalid todo or subtask id." });
+    return;
+  }
+
+  const todo = await prisma.todo.findFirst({
+    include: { subtasks: true },
+    where: { id: todoId, ownerId: session.userId },
+  });
+
+  if (!todo || !todo.subtasks.some((subtask) => subtask.id === subtaskId)) {
+    response.status(404).json({ error: "Todo or subtask not found." });
+    return;
+  }
+
+  const currentSubtask = todo.subtasks.find((subtask) => subtask.id === subtaskId);
+  const nextCompletedAt = currentSubtask?.completedAt ? null : new Date();
+
+  const updatedTodo = await prisma.$transaction(async (transaction) => {
+    await transaction.todoSubtask.update({
+      data: { completedAt: nextCompletedAt },
+      where: { id: subtaskId },
+    });
+
+    const subtasks = await transaction.todoSubtask.findMany({ where: { todoId } });
+    const allDone = subtasks.length > 0 && subtasks.every((subtask) => subtask.completedAt);
+
+    return transaction.todo.update({
+      data: {
+        completedAt: allDone ? new Date() : null,
+      },
+      include: {
+        subtasks: {
+          orderBy: { createdAt: "asc" },
+        },
+      },
+      where: { id: todoId },
+    });
+  });
+
+  response.json(updatedTodo);
+});
+
 app.get("/api/study-info", async (request, response) => {
   const session = await getSession(request);
   const [spo, modules] = await Promise.all([
@@ -1081,17 +1555,52 @@ app.post("/api/study-info", async (request, response) => {
 
 app.get("/api/schedule", async (request, response) => {
   const session = await getSession(request);
+  const weekStart = parseWeekStart(request.query.weekStart);
+  const weekEnd = endOfWeek(weekStart);
   const schedule = await prisma.scheduleDay.findMany({
     include: {
       lessons: {
         orderBy: { startTime: "asc" },
-        where: { OR: [{ ownerId: null }, ...(session ? [{ ownerId: session.userId }] : [])] },
+        where: {
+          OR: [{ ownerId: null }, ...(session ? [{ ownerId: session.userId }] : [])],
+          AND: [{ OR: [{ date: null }, { date: { gte: weekStart, lt: weekEnd } }] }],
+        },
       },
     },
     orderBy: { sortOrder: "asc" },
   });
 
-  response.json(schedule);
+  response.json({ days: schedule, weekEnd, weekStart });
+});
+
+app.get("/api/schedule/import-options", async (request, response) => {
+  response.json(await getStarPlanOptions(
+    typeof request.query.facultyId === "string" ? request.query.facultyId : undefined,
+    typeof request.query.semesterId === "string" ? request.query.semesterId : undefined,
+  ));
+});
+
+app.post("/api/schedule/import", async (request, response) => {
+  const session = await getSession(request);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  const weekStart = parseWeekStart(request.body.weekStart);
+  const count = await importStarPlanSchedule({
+    facultyId: String(request.body.facultyId ?? ""),
+    facultyName: String(request.body.facultyName ?? ""),
+    semesterId: String(request.body.semesterId ?? ""),
+    semesterName: String(request.body.semesterName ?? ""),
+    specialization: typeof request.body.specialization === "string" ? request.body.specialization : null,
+    studyGroup: String(request.body.studyGroup ?? ""),
+    userId: session.userId,
+    weekStart,
+  });
+
+  response.json({ count, weekStart });
 });
 
 app.post("/api/schedule/lessons", async (request, response) => {
@@ -1103,14 +1612,175 @@ app.post("/api/schedule/lessons", async (request, response) => {
   }
 
   const day = await getOrCreateScheduleDay(typeof request.body.day === "string" ? request.body.day : "Allgemein");
-  const lesson = await prisma.lesson.create({
-    data: {
-      ...lessonData(request.body, day.id),
-      ownerId: session.userId,
-    },
+  const inviteeIds = Array.isArray(request.body.inviteeIds)
+    ? request.body.inviteeIds.map(Number).filter((id: number) => !Number.isNaN(id) && id !== session.userId)
+    : [];
+  const inviteeEmails = Array.isArray(request.body.inviteeEmails)
+    ? request.body.inviteeEmails.map(normalizeEmail).filter(Boolean)
+    : [];
+  const encryptedInvitations = Array.isArray(request.body.encryptedInvitations)
+    ? request.body.encryptedInvitations as Array<Record<string, unknown>>
+    : [];
+  const invitees = inviteeIds.length || inviteeEmails.length
+    ? await prisma.user.findMany({
+        select: { id: true },
+        where: {
+          id: { not: session.userId },
+          OR: [
+            ...(inviteeIds.length ? [{ id: { in: inviteeIds } }] : []),
+            ...(inviteeEmails.length ? [{ email: { in: inviteeEmails } }] : []),
+          ],
+        },
+      })
+    : [];
+
+  const lesson = await prisma.$transaction(async (transaction) => {
+    const createdLesson = await transaction.lesson.create({
+      data: {
+        ...lessonData(request.body, day.id),
+        ownerId: session.userId,
+      },
+    });
+
+    for (const invitee of invitees) {
+      const encryptedInvitation = encryptedInvitations.find((item) => Number(item.recipientId) === invitee.id);
+      await transaction.lessonInvitation.create({
+        data: {
+          encryptedKey: typeof encryptedInvitation?.encryptedKey === "string" ? encryptedInvitation.encryptedKey : null,
+          encryptedPayload: typeof encryptedInvitation?.encryptedPayload === "string" ? encryptedInvitation.encryptedPayload : null,
+          encryptionIv: typeof encryptedInvitation?.encryptionIv === "string" ? encryptedInvitation.encryptionIv : null,
+          lessonId: createdLesson.id,
+          recipientId: invitee.id,
+          senderId: session.userId,
+        },
+      }).catch(() => undefined);
+    }
+
+    return createdLesson;
   });
 
   response.status(201).json(lesson);
+});
+
+app.get("/api/schedule/invitations", async (request, response) => {
+  const session = await getSession(request);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  const invitations = await prisma.lessonInvitation.findMany({
+    include: {
+      lesson: {
+        include: { scheduleDay: true },
+      },
+      sender: {
+        select: {
+          email: true,
+          id: true,
+          name: true,
+        },
+      },
+    },
+    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+    where: { recipientId: session.userId },
+  });
+
+  response.json(invitations);
+});
+
+app.post("/api/schedule/invitations/:id/accept", async (request, response) => {
+  const session = await getSession(request);
+  const id = Number(request.params.id);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (Number.isNaN(id)) {
+    response.status(400).json({ error: "Invalid invitation id." });
+    return;
+  }
+
+  const invitation = await prisma.lessonInvitation.findFirst({
+    include: { lesson: true },
+    where: {
+      id,
+      recipientId: session.userId,
+      status: "PENDING",
+    },
+  });
+
+  if (!invitation) {
+    response.status(404).json({ error: "Invitation not found." });
+    return;
+  }
+
+  const acceptedInvitation = await prisma.$transaction(async (transaction) => {
+    await transaction.lesson.create({
+      data: {
+        ...invitationLessonData({
+          ...invitation.lesson,
+          encryptedKey: invitation.encryptedKey ?? invitation.lesson.encryptedKey,
+          encryptedPayload: invitation.encryptedPayload ?? invitation.lesson.encryptedPayload,
+          encryptionIv: invitation.encryptionIv ?? invitation.lesson.encryptionIv,
+        }),
+        ownerId: session.userId,
+        source: "INVITATION",
+        sourceKey: `invitation-${invitation.id}`,
+      },
+    });
+
+    return transaction.lessonInvitation.update({
+      data: {
+        respondedAt: new Date(),
+        status: "ACCEPTED",
+      },
+      where: { id: invitation.id },
+    });
+  });
+
+  response.json(acceptedInvitation);
+});
+
+app.post("/api/schedule/invitations/:id/reject", async (request, response) => {
+  const session = await getSession(request);
+  const id = Number(request.params.id);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (Number.isNaN(id)) {
+    response.status(400).json({ error: "Invalid invitation id." });
+    return;
+  }
+
+  const invitation = await prisma.lessonInvitation.findFirst({
+    where: {
+      id,
+      recipientId: session.userId,
+      status: "PENDING",
+    },
+  });
+
+  if (!invitation) {
+    response.status(404).json({ error: "Invitation not found." });
+    return;
+  }
+
+  const rejectedInvitation = await prisma.lessonInvitation.update({
+    data: {
+      respondedAt: new Date(),
+      status: "REJECTED",
+    },
+    where: { id: invitation.id },
+  });
+
+  response.json(rejectedInvitation);
 });
 
 app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {

@@ -1,4 +1,5 @@
 import { getBackendUrl } from '@/constants/api';
+import { generateAccountKeyPair, savePrivateKey } from '@/lib/client-crypto';
 import { createContext, PropsWithChildren, useContext, useMemo, useState } from 'react';
 
 export type Role = 'USER' | 'MANAGER' | 'ADMIN';
@@ -7,6 +8,7 @@ type AuthUser = {
   email: string;
   id: number;
   name: string;
+  publicKeyJson?: string | null;
   role: Role;
 };
 
@@ -24,9 +26,10 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   login: (email: string, password: string, loginAs: Role) => Promise<void>;
   logout: () => Promise<void>;
-  register: (name: string, email: string, password: string, role: Role) => Promise<void>;
+  register: (name: string, email: string, password: string, role: Role) => Promise<string>;
   session: AuthSession | null;
   token: string | null;
+  updatePublicKey: (publicKeyJson: string) => void;
   user: AuthUser | null;
 };
 
@@ -65,8 +68,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function register(name: string, email: string, password: string, role: Role) {
+    const keyPair = await generateAccountKeyPair();
     const response = await fetch(`${backendUrl}/api/auth/register`, {
-      body: JSON.stringify({ email, name, password, role }),
+      body: JSON.stringify({ email, name, password, publicKeyJson: keyPair.publicKeyJson, role }),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     });
@@ -74,6 +78,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (!response.ok) {
       throw new Error(await readError(response));
     }
+
+    savePrivateKey(email, keyPair.privateKeyJson);
+    return keyPair.privateKeyJson;
   }
 
   async function confirmRegistration(token: string) {
@@ -94,6 +101,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }).catch(() => undefined);
   }
 
+  function updatePublicKey(publicKeyJson: string) {
+    setSession((current) => current ? {
+      ...current,
+      user: {
+        ...current.user,
+        publicKeyJson,
+      },
+    } : current);
+  }
+
   const value = useMemo<AuthContextValue>(
     () => ({
       activeRole: session?.activeRole ?? null,
@@ -106,6 +123,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       register,
       session,
       token: session?.token ?? null,
+      updatePublicKey,
       user: session?.user ?? null,
     }),
     [session],

@@ -10,7 +10,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? 'dark' : 'light';
-  const { isAdminMode, isManagerMode } = useAuth();
+  const { isAdminMode, isAuthenticated, isManagerMode } = useAuth();
 
   return (
     <Tabs
@@ -36,8 +36,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="deadlines"
         options={{
-          title: 'Fristen',
-          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="event-available" color={color} />,
+          title: 'To-Do',
+          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="checklist" color={color} />,
         }}
       />
       <Tabs.Screen
@@ -59,6 +59,14 @@ export default function TabLayout() {
         options={{
           title: 'Account',
           tabBarIcon: ({ color }) => <MaterialIcons size={25} name="account-circle" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="requests"
+        options={{
+          href: isAuthenticated ? undefined : null,
+          title: 'Anfragen',
+          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="notifications" color={color} />,
         }}
       />
       <Tabs.Screen

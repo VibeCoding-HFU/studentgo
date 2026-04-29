@@ -23,6 +23,7 @@ export default function ContactsScreen() {
   const backendUrl = useMemo(() => getBackendUrl(), []);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [form, setForm] = useState(emptyForm);
+  const [formOpen, setFormOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
 
@@ -94,19 +95,6 @@ export default function ContactsScreen() {
           <TextInput placeholder="Kontakt suchen" placeholderTextColor="#98A2B3" style={styles.searchInput} value={query} onChangeText={setQuery} />
         </View>
 
-        <View style={styles.form}>
-          <TextInput placeholder="Name" placeholderTextColor="#98A2B3" style={styles.input} value={form.name} onChangeText={(name) => setForm((current) => ({ ...current, name }))} />
-          <TextInput placeholder="Rolle" placeholderTextColor="#98A2B3" style={styles.input} value={form.role} onChangeText={(role) => setForm((current) => ({ ...current, role }))} />
-          <TextInput autoCapitalize="none" keyboardType="email-address" placeholder="E-Mail" placeholderTextColor="#98A2B3" style={styles.input} value={form.email} onChangeText={(email) => setForm((current) => ({ ...current, email }))} />
-          <TextInput placeholder="Telefon" placeholderTextColor="#98A2B3" style={styles.input} value={form.phone} onChangeText={(phone) => setForm((current) => ({ ...current, phone }))} />
-          <TextInput placeholder="Raum" placeholderTextColor="#98A2B3" style={styles.input} value={form.room} onChangeText={(room) => setForm((current) => ({ ...current, room }))} />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Pressable style={styles.button} onPress={addContact}>
-            <MaterialIcons name="add" size={22} color="#FFFFFF" />
-            <Text style={styles.buttonText}>Persoenlichen Kontakt speichern</Text>
-          </Pressable>
-        </View>
-
         <View style={styles.contactList}>
           {filteredContacts.length === 0 ? <Text style={styles.empty}>Keine Kontakte vorhanden.</Text> : null}
           {filteredContacts.map((contact) => (
@@ -126,6 +114,31 @@ export default function ContactsScreen() {
             </View>
           ))}
         </View>
+
+        <View style={styles.addPanel}>
+          <Pressable style={styles.addHeader} onPress={() => setFormOpen((current) => !current)}>
+            <View>
+              <Text style={styles.addTitle}>Persoenlichen Kontakt hinzufuegen</Text>
+              <Text style={styles.addHint}>Eigene Kontakte bleiben nur fuer deinen Account sichtbar.</Text>
+            </View>
+            <MaterialIcons name={formOpen ? 'expand-less' : 'expand-more'} size={28} color="#2F80ED" />
+          </Pressable>
+
+          {formOpen ? (
+            <View style={styles.form}>
+              <TextInput placeholder="Name" placeholderTextColor="#98A2B3" style={styles.input} value={form.name} onChangeText={(name) => setForm((current) => ({ ...current, name }))} />
+              <TextInput placeholder="Rolle" placeholderTextColor="#98A2B3" style={styles.input} value={form.role} onChangeText={(role) => setForm((current) => ({ ...current, role }))} />
+              <TextInput autoCapitalize="none" keyboardType="email-address" placeholder="E-Mail" placeholderTextColor="#98A2B3" style={styles.input} value={form.email} onChangeText={(email) => setForm((current) => ({ ...current, email }))} />
+              <TextInput placeholder="Telefon" placeholderTextColor="#98A2B3" style={styles.input} value={form.phone} onChangeText={(phone) => setForm((current) => ({ ...current, phone }))} />
+              <TextInput placeholder="Raum" placeholderTextColor="#98A2B3" style={styles.input} value={form.room} onChangeText={(room) => setForm((current) => ({ ...current, room }))} />
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              <Pressable style={styles.button} onPress={addContact}>
+                <MaterialIcons name="add" size={22} color="#FFFFFF" />
+                <Text style={styles.buttonText}>Persoenlichen Kontakt speichern</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -140,13 +153,13 @@ const styles = StyleSheet.create({
   subtitle: { color: '#667085', fontSize: 15, lineHeight: 22, marginTop: 8 },
   searchBox: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 10, marginBottom: 14, paddingHorizontal: 14 },
   searchInput: { color: '#101828', flex: 1, fontSize: 15, minHeight: 48 },
-  form: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, gap: 10, marginBottom: 18, padding: 14 },
+  form: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, gap: 10, padding: 14 },
   input: { backgroundColor: '#F9FAFB', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, color: '#101828', fontSize: 15, minHeight: 46, paddingHorizontal: 12 },
   button: { alignItems: 'center', backgroundColor: '#2F80ED', borderRadius: 8, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 48 },
   buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   error: { color: '#B42318', fontSize: 13, fontWeight: '700' },
   empty: { color: '#667085', fontSize: 14, lineHeight: 20 },
-  contactList: { gap: 12 },
+  contactList: { gap: 12, marginBottom: 18 },
   contactCard: { alignItems: 'flex-start', backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 12, padding: 14 },
   avatar: { alignItems: 'center', backgroundColor: '#FCE7F3', borderRadius: 8, height: 44, justifyContent: 'center', width: 44 },
   avatarText: { color: '#C11574', fontSize: 14, fontWeight: '800' },
@@ -156,4 +169,8 @@ const styles = StyleSheet.create({
   personalBadge: { color: '#047857', fontSize: 12, fontWeight: '800' },
   contactRole: { color: '#475467', fontSize: 14, fontWeight: '700', marginTop: 3 },
   contactDetail: { color: '#667085', fontSize: 13, lineHeight: 19, marginTop: 5 },
+  addPanel: { marginTop: 4 },
+  addHeader: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, padding: 14 },
+  addTitle: { color: '#101828', fontSize: 17, fontWeight: '800' },
+  addHint: { color: '#667085', fontSize: 13, lineHeight: 19, marginTop: 3, paddingRight: 8 },
 });

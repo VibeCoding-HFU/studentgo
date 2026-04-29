@@ -69,6 +69,7 @@ const emptyDeadline = { date: '', description: '', title: '' };
 const emptyMeal = { canteenName: '', currency: 'EUR', date: '', day: '', mainDish: '', priceCents: '', vegetarianDish: '' };
 const emptyLesson = { day: '', endTime: '', lecturer: '', room: '', startTime: '', title: '' };
 const emptyInfo = { category: 'Allgemein', content: '', title: '' };
+const actions: Action[] = ['CREATE', 'UPDATE', 'DELETE'];
 
 function formatDate(value: string) {
   return value.includes('T') ? value.slice(0, 10) : value;
@@ -84,6 +85,48 @@ function statusLabel(status: ChangeRequest['status']) {
   }
 
   return 'Offen';
+}
+
+function actionLabel(action: Action) {
+  if (action === 'UPDATE') {
+    return 'Bearbeiten';
+  }
+
+  if (action === 'DELETE') {
+    return 'Loeschen';
+  }
+
+  return 'Anlegen';
+}
+
+function ActionComboBox({ value, onChange }: { onChange: (action: Action) => void; value: Action }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <View style={styles.comboBox}>
+      <Pressable accessibilityRole="combobox" style={styles.comboButton} onPress={() => setIsOpen((current) => !current)}>
+        <Text style={styles.comboLabel}>{actionLabel(value)}</Text>
+        <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
+      </Pressable>
+      {isOpen ? (
+        <View style={styles.comboMenu}>
+          {actions.map((nextAction) => (
+            <Pressable
+              key={nextAction}
+              style={[styles.comboOption, value === nextAction && styles.comboOptionActive]}
+              onPress={() => {
+                onChange(nextAction);
+                setIsOpen(false);
+              }}>
+              <Text style={[styles.comboOptionText, value === nextAction && styles.comboOptionTextActive]}>
+                {actionLabel(nextAction)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 function itemMeta(item: Contact | Deadline | Meal | (ScheduleDay['lessons'][number] & { day: string }) | StudyInfo) {
@@ -156,7 +199,8 @@ export default function ManagerScreen() {
         throw new Error('Verwaltungsdaten konnten nicht geladen werden.');
       }
 
-      const schedule = (await scheduleResponse.json()) as ScheduleDay[];
+      const scheduleBody = (await scheduleResponse.json()) as { days: ScheduleDay[] };
+      const schedule = scheduleBody.days;
       const info = (await infoResponse.json()) as { spo: StudyInfo[] };
       setContacts((await contactsResponse.json()) as Contact[]);
       setDeadlines((await deadlinesResponse.json()) as Deadline[]);
@@ -190,6 +234,18 @@ export default function ManagerScreen() {
     if (nextEntity !== entity) {
       setEntity(nextEntity);
     }
+  }
+
+  function changeAction(nextAction: Action) {
+    setAction(nextAction);
+    setTargetId(null);
+    setContactForm(emptyContact);
+    setDeadlineForm(emptyDeadline);
+    setMealForm(emptyMeal);
+    setLessonForm(emptyLesson);
+    setInfoForm(emptyInfo);
+    setError('');
+    setMessage('');
   }
 
   function selectItem(item: Contact | Deadline | Meal | (ScheduleDay['lessons'][number] & { day: string }) | StudyInfo) {
@@ -349,18 +405,11 @@ export default function ManagerScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.toggleRow}>
-          {(['CREATE', 'UPDATE', 'DELETE'] as Action[]).map((nextAction) => (
-            <Pressable key={nextAction} style={[styles.actionButton, action === nextAction && styles.actionButtonActive]} onPress={() => setAction(nextAction)}>
-              <Text style={[styles.actionText, action === nextAction && styles.actionTextActive]}>
-                {nextAction === 'CREATE' ? 'Neu' : nextAction === 'UPDATE' ? 'Bearbeiten' : 'Loeschen'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <ActionComboBox value={action} onChange={changeAction} />
 
-        {action !== 'CREATE' && selectedItems.length > 0 && (
+        {action !== 'CREATE' && (
           <View style={styles.itemList}>
+            {selectedItems.length === 0 ? <Text style={styles.empty}>Keine bestehenden Eintraege vorhanden.</Text> : null}
             {selectedItems.map((item) => (
               <Pressable key={item.id} style={[styles.itemCard, targetId === item.id && styles.itemCardActive]} onPress={() => selectItem(item)}>
                 <Text style={styles.itemTitle}>{'name' in item ? item.name : 'mainDish' in item ? item.mainDish : item.title}</Text>
@@ -370,6 +419,9 @@ export default function ManagerScreen() {
           </View>
         )}
 
+        {action === 'UPDATE' && !targetId ? <Text style={styles.helperText}>Waehle einen Eintrag aus der Liste aus, um ihn zu bearbeiten.</Text> : null}
+
+        {(action === 'CREATE' || (action === 'UPDATE' && targetId)) && (
         <View style={styles.form}>
           {entity === 'CONTACT' ? (
             <>
@@ -419,6 +471,18 @@ export default function ManagerScreen() {
             <Text style={styles.buttonText}>{isLoading ? 'Bitte warten' : 'Anfrage senden'}</Text>
           </Pressable>
         </View>
+        )}
+
+        {action === 'DELETE' ? (
+          <View style={styles.deleteBox}>
+            {message ? <Text style={styles.success}>{message}</Text> : null}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <Pressable disabled={isLoading || !targetId} style={[styles.button, (!targetId || isLoading) && styles.buttonDisabled]} onPress={submitRequest}>
+              <MaterialIcons name="delete" size={21} color="#FFFFFF" />
+              <Text style={styles.buttonText}>{targetId ? 'Loeschanfrage senden' : 'Eintrag auswaehlen'}</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Meine Anfragen</Text>
@@ -500,6 +564,51 @@ const styles = StyleSheet.create({
   toggleTextActive: {
     color: '#FFFFFF',
   },
+  comboBox: {
+    marginBottom: 14,
+    position: 'relative',
+    zIndex: 2,
+  },
+  comboButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D0D5DD',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 46,
+    paddingHorizontal: 12,
+  },
+  comboLabel: {
+    color: '#101828',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  comboMenu: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D0D5DD',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  comboOption: {
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: 12,
+  },
+  comboOptionActive: {
+    backgroundColor: '#ECFDF3',
+  },
+  comboOptionText: {
+    color: '#475467',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  comboOptionTextActive: {
+    color: '#0E6F63',
+  },
   actionButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -525,6 +634,11 @@ const styles = StyleSheet.create({
   itemList: {
     gap: 10,
     marginBottom: 16,
+  },
+  empty: {
+    color: '#667085',
+    fontSize: 14,
+    lineHeight: 20,
   },
   itemCard: {
     backgroundColor: '#FFFFFF',
@@ -556,6 +670,21 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 22,
     padding: 14,
+  },
+  deleteBox: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E4E7EC',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    marginBottom: 22,
+    padding: 14,
+  },
+  helperText: {
+    color: '#667085',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
   },
   input: {
     backgroundColor: '#F9FAFB',

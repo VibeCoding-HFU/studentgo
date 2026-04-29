@@ -1,12 +1,17 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { toQR } from 'toqr';
 
 import { Role, useAuth } from '@/contexts/auth-context';
+import { getBackendUrl } from '@/constants/api';
+import { generateAccountKeyPair, getPrivateKey, hasPrivateKey, savePrivateKey } from '@/lib/client-crypto';
 
 type Mode = 'login' | 'register';
 const roles: Role[] = ['USER', 'MANAGER', 'ADMIN'];
+const qrSize = 260;
 
 function roleLabel(role: Role | null) {
   if (role === 'ADMIN') {
@@ -50,14 +55,42 @@ function RoleComboBox({ value, onChange }: { onChange: (role: Role) => void; val
   );
 }
 
+function qrDataUri(content: string) {
+  const matrix = toQR(content);
+  const size = Math.sqrt(matrix.length);
+  const cells: string[] = [];
+
+  matrix.forEach((cell, index) => {
+    if (!cell) {
+      return;
+    }
+
+    const x = index % size;
+    const y = Math.floor(index / size);
+    cells.push(`<rect x="${x}" y="${y}" width="1" height="1"/>`);
+  });
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="white"/>${cells.join('')}</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 export default function AccountScreen() {
-  const { activeRole, confirmRegistration, isAuthenticated, login, logout, register, user } = useAuth();
+  const { activeRole, confirmRegistration, isAuthenticated, login, logout, register, token, updatePublicKey, user } = useAuth();
+  const backendUrl = getBackendUrl();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [mode, setMode] = useState<Mode>('login');
   const [role, setRole] = useState<Role>('USER');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmationToken, setConfirmationToken] = useState('');
+  const [privateKeyInput, setPrivateKeyInput] = useState('');
+  const [generatedPrivateKey, setGeneratedPrivateKey] = useState('');
+  const [, setKeyVersion] = useState(0);
+  const [showKeyWarning, setShowKeyWarning] = useState(false);
+  const [showKeyOk, setShowKeyOk] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,8 +104,9 @@ export default function AccountScreen() {
       if (mode === 'login') {
         await login(email, password, role);
       } else {
-        await register(name, email, password, role);
-        setMessage('Bestaetigungs-E-Mail wurde versendet. Gib den Code aus der E-Mail ein, um den Account zu aktivieren.');
+        const privateKeyJson = await register(name, email, password, role);
+        setGeneratedPrivateKey(privateKeyJson);
+        setMessage('Bestaetigungs-E-Mail wurde versendet. Dein Private Key wurde nur auf diesem Frontend gespeichert. Bewahre ihn sicher auf.');
       }
 
       setPassword('');
@@ -81,6 +115,92 @@ export default function AccountScreen() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function storePrivateKey() {
+    setError('');
+    setMessage('');
+
+    if (!user || !token) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(privateKeyInput);
+      if (!parsed.d || !parsed.n || !parsed.e) {
+        throw new Error('ungueltig');
+      }
+
+      savePrivateKey(user.email, privateKeyInput);
+      setKeyVersion((current) => current + 1);
+
+      if (!user.publicKeyJson) {
+        const publicKeyJson = JSON.stringify({
+          alg: parsed.alg,
+          e: parsed.e,
+          ext: true,
+          key_ops: ['encrypt'],
+          kty: parsed.kty,
+          n: parsed.n,
+        });
+        await fetch(`${backendUrl}/api/account/public-key`, {
+          body: JSON.stringify({ publicKeyJson }),
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          method: 'PATCH',
+        });
+        updatePublicKey(publicKeyJson);
+      }
+
+      setPrivateKeyInput('');
+      setMessage('Private Key wurde auf diesem Frontend gespeichert.');
+    } catch {
+      setError('Private Key konnte nicht gelesen werden. Fuege den kompletten JSON-Key ein.');
+    }
+  }
+
+  async function replacePrivateKey() {
+    if (!user || !token) {
+      return;
+    }
+
+    setError('');
+    setMessage('');
+
+    try {
+      const keyPair = await generateAccountKeyPair();
+      const response = await fetch(`${backendUrl}/api/account/public-key`, {
+        body: JSON.stringify({ publicKeyJson: keyPair.publicKeyJson }),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        method: 'PATCH',
+      });
+
+      if (!response.ok) {
+        throw new Error('public-key');
+      }
+
+      savePrivateKey(user.email, keyPair.privateKeyJson);
+      updatePublicKey(keyPair.publicKeyJson);
+      setGeneratedPrivateKey(keyPair.privateKeyJson);
+      setKeyVersion((current) => current + 1);
+      setShowKeyWarning(false);
+      setShowKeyOk(true);
+    } catch {
+      setError('Neuer Private Key konnte nicht erzeugt werden.');
+    }
+  }
+
+  function currentPrivateKey() {
+    if (!user) {
+      return '';
+    }
+
+    return generatedPrivateKey || getPrivateKey(user.email) || '';
   }
 
   async function confirmAccount() {
@@ -99,6 +219,9 @@ export default function AccountScreen() {
   }
 
   if (isAuthenticated && user) {
+    const storedPrivateKey = currentPrivateKey();
+    const privateKeyAvailable = Boolean(storedPrivateKey) || hasPrivateKey(user.email);
+
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -121,10 +244,103 @@ export default function AccountScreen() {
             </View>
           </View>
 
+          <View style={styles.form}>
+            <Text style={styles.keyTitle}>Verschluesselung</Text>
+            <Text style={styles.keyHint}>
+              {hasPrivateKey(user.email)
+                ? 'Private Key ist auf diesem Frontend gespeichert.'
+                : 'Fuege deinen Private Key hinzu, um persoenliche Eintraege zu entschluesseln.'}
+            </Text>
+            <View style={styles.keyActionRow}>
+              <Pressable style={styles.keyActionButton} onPress={() => setShowKeyWarning(true)}>
+                <MaterialIcons name="autorenew" size={20} color="#2F80ED" />
+                <Text style={styles.keyActionText}>Neuen Private Key erzeugen</Text>
+              </Pressable>
+              <Pressable disabled={!privateKeyAvailable} style={[styles.keyActionButton, !privateKeyAvailable && styles.buttonDisabled]} onPress={() => setShowQr((current) => !current)}>
+                <MaterialIcons name="qr-code-2" size={20} color="#2F80ED" />
+                <Text style={styles.keyActionText}>QR-Code</Text>
+              </Pressable>
+            </View>
+            {showQr && storedPrivateKey ? (
+              <View style={styles.qrBox}>
+                <Image source={{ uri: qrDataUri(storedPrivateKey) }} style={styles.qrImage} />
+                <Text style={styles.keyHint}>Diesen QR-Code nur auf vertrauenswuerdigen Geraeten anzeigen.</Text>
+              </View>
+            ) : null}
+            <Pressable style={styles.keyActionButton} onPress={() => setScannerOpen((current) => !current)}>
+              <MaterialIcons name="qr-code-scanner" size={20} color="#2F80ED" />
+              <Text style={styles.keyActionText}>Private Key per QR-Code einlesen</Text>
+            </Pressable>
+            {scannerOpen ? (
+              <View style={styles.scannerBox}>
+                {cameraPermission?.granted ? (
+                  <CameraView
+                    barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                    onBarcodeScanned={({ data }) => {
+                      setPrivateKeyInput(data);
+                      setScannerOpen(false);
+                    }}
+                    style={styles.camera}
+                  />
+                ) : (
+                  <Pressable style={styles.button} onPress={requestCameraPermission}>
+                    <MaterialIcons name="photo-camera" size={22} color="#FFFFFF" />
+                    <Text style={styles.buttonText}>Kamera erlauben</Text>
+                  </Pressable>
+                )}
+              </View>
+            ) : null}
+            <TextInput
+              multiline
+              placeholder="Private Key JSON"
+              placeholderTextColor="#98A2B3"
+              style={[styles.input, styles.keyInput]}
+              value={privateKeyInput}
+              onChangeText={setPrivateKeyInput}
+            />
+            {message ? <Text style={styles.success}>{message}</Text> : null}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <Pressable style={styles.button} onPress={storePrivateKey}>
+              <MaterialIcons name="vpn-key" size={22} color="#FFFFFF" />
+              <Text style={styles.buttonText}>Private Key speichern</Text>
+            </Pressable>
+          </View>
+
           <Pressable style={styles.secondaryButton} onPress={logout}>
             <MaterialIcons name="logout" size={22} color="#B42318" />
             <Text style={styles.secondaryButtonText}>Abmelden</Text>
           </Pressable>
+
+          {showKeyWarning ? (
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Neuen Private Key erzeugen?</Text>
+                <Text style={styles.modalText}>
+                  Ein neuer Private Key kann nur Daten entschluesseln, die mit dem passenden neuen Public Key verschluesselt wurden. Bereits vorhandene alte Daten bleiben nur mit dem alten Private Key lesbar.
+                </Text>
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.cancelButton} onPress={() => setShowKeyWarning(false)}>
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable style={styles.button} onPress={replacePrivateKey}>
+                    <Text style={styles.buttonText}>Bestaetigen</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {showKeyOk ? (
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Private Key erzeugt</Text>
+                <Text style={styles.modalText}>Bewahre deinen Private Key sicher auf, um den Zugriff auf verschluesselte Eintraege zu wahren.</Text>
+                <Pressable style={styles.button} onPress={() => setShowKeyOk(false)}>
+                  <Text style={styles.buttonText}>OK</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     );
@@ -190,6 +406,13 @@ export default function AccountScreen() {
           <RoleComboBox value={role} onChange={setRole} />
 
           {message ? <Text style={styles.success}>{message}</Text> : null}
+          {generatedPrivateKey ? (
+            <View style={styles.keyBox}>
+              <Text style={styles.keyTitle}>Dein Private Key</Text>
+              <Text style={styles.keyHint}>Nur du kannst ihn sehen. Bewahre ihn sicher auf, bevor du das Frontend wechselst.</Text>
+              <Text selectable style={styles.keyText}>{generatedPrivateKey}</Text>
+            </View>
+          ) : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <Pressable disabled={isSubmitting} style={[styles.button, isSubmitting && styles.buttonDisabled]} onPress={submit}>
@@ -453,4 +676,54 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
   },
+  keyTitle: { color: '#101828', fontSize: 16, fontWeight: '800' },
+  keyHint: { color: '#667085', fontSize: 13, lineHeight: 19, marginTop: 4 },
+  keyInput: { minHeight: 110, textAlignVertical: 'top' },
+  keyBox: { backgroundColor: '#F9FAFB', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
+  keyText: { color: '#344054', fontSize: 11, lineHeight: 16 },
+  keyActionRow: { flexDirection: 'row', gap: 10 },
+  keyActionButton: {
+    alignItems: 'center',
+    backgroundColor: '#EEF4FF',
+    borderColor: '#B2CCFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 7,
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingHorizontal: 10,
+  },
+  keyActionText: { color: '#2F80ED', flexShrink: 1, fontSize: 13, fontWeight: '800', textAlign: 'center' },
+  qrBox: { alignItems: 'center', backgroundColor: '#F9FAFB', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, gap: 10, padding: 12 },
+  qrImage: { height: qrSize, width: qrSize },
+  scannerBox: { backgroundColor: '#101828', borderRadius: 8, minHeight: 260, overflow: 'hidden' },
+  camera: { flex: 1, minHeight: 260 },
+  modalOverlay: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 24, 40, 0.42)',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    padding: 20,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  modalCard: { backgroundColor: '#FFFFFF', borderRadius: 8, gap: 12, maxWidth: 420, padding: 16, width: '100%' },
+  modalTitle: { color: '#101828', fontSize: 18, fontWeight: '800' },
+  modalText: { color: '#475467', fontSize: 14, lineHeight: 20 },
+  modalActions: { flexDirection: 'row', gap: 10 },
+  cancelButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D0D5DD',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+  cancelButtonText: { color: '#344054', fontSize: 15, fontWeight: '800' },
 });
