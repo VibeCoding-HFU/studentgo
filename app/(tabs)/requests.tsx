@@ -72,7 +72,7 @@ export default function RequestsScreen() {
     }
 
     const data = (await response.json()) as Invitation[];
-    const privateKey = user?.email ? getPrivateKey(user.email) : null;
+    const privateKey = user?.email ? await getPrivateKey(user.email) : null;
     const decrypted = await Promise.all(data.map(async (invitation) => {
       if (!privateKey || !invitation.encryptedPayload || !invitation.encryptedKey || !invitation.encryptionIv) {
         return invitation;

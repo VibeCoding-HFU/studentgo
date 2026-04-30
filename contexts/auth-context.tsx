@@ -79,7 +79,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       throw new Error(await readError(response));
     }
 
-    savePrivateKey(email, keyPair.privateKeyJson);
+    await savePrivateKey(email, keyPair.privateKeyJson);
     return keyPair.privateKeyJson;
   }
 

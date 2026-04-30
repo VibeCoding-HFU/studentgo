@@ -309,7 +309,7 @@ export default function ScheduleScreen() {
 
     if (response.ok) {
       const body = (await response.json()) as { days: ScheduleDay[] };
-      const privateKey = user?.email ? getPrivateKey(user.email) : null;
+      const privateKey = user?.email ? await getPrivateKey(user.email) : null;
       const decryptedDays = await Promise.all(body.days.map(async (day) => ({
         ...day,
         lessons: await Promise.all(day.lessons.map(async (lesson) => {
@@ -353,7 +353,7 @@ export default function ScheduleScreen() {
     }
 
     const data = (await response.json()) as Invitation[];
-    const privateKey = user?.email ? getPrivateKey(user.email) : null;
+    const privateKey = user?.email ? await getPrivateKey(user.email) : null;
     const decrypted = await Promise.all(data.map(async (invitation) => {
       if (!privateKey || !invitation.encryptedPayload || !invitation.encryptedKey || !invitation.encryptionIv) {
         return invitation;
@@ -497,7 +497,7 @@ export default function ScheduleScreen() {
       return;
     }
 
-    const privateKey = getPrivateKey(user.email);
+    const privateKey = await getPrivateKey(user.email);
     if (!privateKey) {
       setFormError('Hinterlege deinen Private Key im Account-Bereich, um persoenliche Planeintraege zu speichern und anzuzeigen.');
       return;

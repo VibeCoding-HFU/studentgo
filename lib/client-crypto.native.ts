@@ -1,14 +1,19 @@
 import 'react-native-get-random-values';
 
+import * as SecureStore from 'expo-secure-store';
+
 import {
   base64ToBytes,
   bytesToBase64,
   CompatibleSubtle,
   EncryptedEnvelope,
+  getRememberedPrivateKey,
+  rememberPrivateKey,
   parsePrivateKey,
   rsaAlgorithm,
+  storageKey,
 } from './client-crypto.shared';
-export { getPrivateKey, hasPrivateKey, publicKeyFromPrivateKey, savePrivateKey } from './client-crypto.shared';
+export { publicKeyFromPrivateKey } from './client-crypto.shared';
 
 type QuickCryptoModule = typeof import('react-native-quick-crypto').default;
 
@@ -34,6 +39,31 @@ async function getRandomBytes(length: number) {
   const bytes = new Uint8Array(length);
   quickCrypto.getRandomValues(bytes);
   return bytes;
+}
+
+export async function savePrivateKey(email: string, privateKeyJson: string) {
+  rememberPrivateKey(email, privateKeyJson);
+  await SecureStore.setItemAsync(storageKey(email), privateKeyJson);
+}
+
+export async function getPrivateKey(email: string) {
+  const rememberedKey = getRememberedPrivateKey(email);
+
+  if (rememberedKey) {
+    return rememberedKey;
+  }
+
+  const storedKey = await SecureStore.getItemAsync(storageKey(email));
+
+  if (storedKey) {
+    rememberPrivateKey(email, storedKey);
+  }
+
+  return storedKey;
+}
+
+export async function hasPrivateKey(email?: string | null) {
+  return Boolean(email && await getPrivateKey(email));
 }
 
 export async function generateAccountKeyPair() {

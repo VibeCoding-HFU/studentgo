@@ -75,10 +75,20 @@ export function publicKeyFromPrivateKey(privateKeyJson: string) {
   });
 }
 
-export function savePrivateKey(email: string, privateKeyJson: string) {
+export function rememberPrivateKey(email: string, privateKeyJson: string) {
   parsePrivateKey(privateKeyJson);
   const key = storageKey(email);
   privateKeyMemoryStore.set(key, privateKeyJson);
+}
+
+export function getRememberedPrivateKey(email: string) {
+  return privateKeyMemoryStore.get(storageKey(email)) ?? null;
+}
+
+export async function savePrivateKey(email: string, privateKeyJson: string) {
+  rememberPrivateKey(email, privateKeyJson);
+  const key = storageKey(email);
+
   try {
     globalThis.localStorage?.setItem(key, privateKeyJson);
   } catch {
@@ -86,8 +96,9 @@ export function savePrivateKey(email: string, privateKeyJson: string) {
   }
 }
 
-export function getPrivateKey(email: string) {
+export async function getPrivateKey(email: string) {
   const key = storageKey(email);
+
   try {
     return globalThis.localStorage?.getItem(key) ?? privateKeyMemoryStore.get(key) ?? null;
   } catch {
@@ -95,6 +106,6 @@ export function getPrivateKey(email: string) {
   }
 }
 
-export function hasPrivateKey(email?: string | null) {
-  return Boolean(email && getPrivateKey(email));
+export async function hasPrivateKey(email?: string | null) {
+  return Boolean(email && await getPrivateKey(email));
 }

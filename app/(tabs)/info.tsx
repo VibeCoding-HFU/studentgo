@@ -35,7 +35,7 @@ export default function InfoScreen() {
 
     if (response.ok) {
       const data = (await response.json()) as { spo: StudyInfo[] };
-      const privateKey = user?.email ? getPrivateKey(user.email) : null;
+      const privateKey = user?.email ? await getPrivateKey(user.email) : null;
       const decryptedItems = await Promise.all(data.spo.map(async (item) => {
         if (!privateKey || !item.encryptedPayload || !item.encryptedKey || !item.encryptionIv) {
           return item;

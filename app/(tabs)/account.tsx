@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { toQR } from 'toqr';
@@ -86,8 +86,9 @@ function qrRuns(content: string) {
   return { runs, size };
 }
 
-function PrivateKeyQrCode({ content }: { content: string }) {
-  const qr = useMemo(() => qrRuns(content), [content]);
+type PrivateKeyQr = ReturnType<typeof qrRuns>;
+
+const PrivateKeyQrCode = memo(function PrivateKeyQrCode({ qr }: { qr: PrivateKeyQr }) {
   const moduleSize = qrSize / (qr.size + qrQuietZone * 2);
 
   return (
@@ -108,7 +109,7 @@ function PrivateKeyQrCode({ content }: { content: string }) {
       ))}
     </View>
   );
-}
+});
 
 export default function AccountScreen() {
   const { activeRole, confirmRegistration, isAuthenticated, login, logout, register, token, updatePublicKey, user } = useAuth();
@@ -122,7 +123,13 @@ export default function AccountScreen() {
   const [confirmationToken, setConfirmationToken] = useState('');
   const [privateKeyInput, setPrivateKeyInput] = useState('');
   const [generatedPrivateKey, setGeneratedPrivateKey] = useState('');
-  const [, setKeyVersion] = useState(0);
+  const [storedPrivateKey, setStoredPrivateKey] = useState('');
+  const [privateKeyAvailable, setPrivateKeyAvailable] = useState(false);
+  const [isKeyLoading, setIsKeyLoading] = useState(false);
+  const [privateKeyQr, setPrivateKeyQr] = useState<PrivateKeyQr | null>(null);
+  const [privateKeyQrContent, setPrivateKeyQrContent] = useState('');
+  const [qrProgress, setQrProgress] = useState(0);
+  const [isQrLoading, setIsQrLoading] = useState(false);
   const [showKeyWarning, setShowKeyWarning] = useState(false);
   const [showKeyOk, setShowKeyOk] = useState(false);
   const [showQr, setShowQr] = useState(false);
@@ -131,6 +138,53 @@ export default function AccountScreen() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const prepareQrCode = useCallback(async (privateKeyJson: string) => {
+    setIsQrLoading(true);
+    setQrProgress(0.18);
+    setPrivateKeyQr(null);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    setQrProgress(0.55);
+
+    const nextQr = qrRuns(privateKeyJson);
+    setPrivateKeyQr(nextQr);
+    setPrivateKeyQrContent(privateKeyJson);
+    setQrProgress(1);
+    setIsQrLoading(false);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStoredPrivateKey() {
+      if (!user?.email) {
+        setStoredPrivateKey('');
+        setPrivateKeyAvailable(false);
+        setPrivateKeyQr(null);
+        setPrivateKeyQrContent('');
+        return;
+      }
+
+      setIsKeyLoading(true);
+      const privateKeyJson = generatedPrivateKey || (await getPrivateKey(user.email)) || '';
+
+      if (!cancelled) {
+        setStoredPrivateKey(privateKeyJson);
+        setPrivateKeyAvailable(Boolean(privateKeyJson) || await hasPrivateKey(user.email));
+        if (!generatedPrivateKey) {
+          setPrivateKeyQr(null);
+          setPrivateKeyQrContent('');
+        }
+        setIsKeyLoading(false);
+      }
+    }
+
+    loadStoredPrivateKey();
+    return () => {
+      cancelled = true;
+    };
+  }, [generatedPrivateKey, user?.email]);
 
   async function submit() {
     setError('');
@@ -143,7 +197,8 @@ export default function AccountScreen() {
       } else {
         const privateKeyJson = await register(name, email, password, role);
         setGeneratedPrivateKey(privateKeyJson);
-        setMessage('Bestaetigungs-E-Mail wurde versendet. Dein Private Key wurde nur auf diesem Frontend gespeichert. Bewahre ihn sicher auf.');
+        await prepareQrCode(privateKeyJson);
+        setMessage('Bestaetigungs-E-Mail wurde versendet. Dein Private Key wurde auf diesem Geraet gespeichert. Bewahre ihn sicher auf.');
       }
 
       setPassword('');
@@ -165,8 +220,12 @@ export default function AccountScreen() {
     try {
       const publicKeyJson = publicKeyFromPrivateKey(privateKeyInput);
 
-      savePrivateKey(user.email, privateKeyInput);
-      setKeyVersion((current) => current + 1);
+      await savePrivateKey(user.email, privateKeyInput);
+      setStoredPrivateKey(privateKeyInput);
+      setPrivateKeyAvailable(true);
+      setPrivateKeyQr(null);
+      setPrivateKeyQrContent('');
+      setShowQr(false);
 
       if (user.publicKeyJson !== publicKeyJson) {
         const response = await fetch(`${backendUrl}/api/account/public-key`, {
@@ -187,7 +246,7 @@ export default function AccountScreen() {
 
       setPrivateKeyInput('');
       setShowManualInput(false);
-      setMessage('Private Key wurde auf diesem Frontend gespeichert.');
+      setMessage('Private Key wurde auf diesem Geraet gespeichert.');
     } catch {
       setError('Private Key konnte nicht gelesen werden. Fuege den kompletten JSON-Key ein.');
     }
@@ -216,23 +275,31 @@ export default function AccountScreen() {
         throw new Error('public-key');
       }
 
-      savePrivateKey(user.email, keyPair.privateKeyJson);
+      await savePrivateKey(user.email, keyPair.privateKeyJson);
       updatePublicKey(keyPair.publicKeyJson);
       setGeneratedPrivateKey(keyPair.privateKeyJson);
-      setKeyVersion((current) => current + 1);
+      setStoredPrivateKey(keyPair.privateKeyJson);
+      setPrivateKeyAvailable(true);
       setShowKeyWarning(false);
+      setShowQr(true);
+      await prepareQrCode(keyPair.privateKeyJson);
       setShowKeyOk(true);
     } catch {
       setError('Neuer Private Key konnte nicht erzeugt werden.');
     }
   }
 
-  function currentPrivateKey() {
-    if (!user) {
-      return '';
+  async function toggleQrCode() {
+    if (!storedPrivateKey) {
+      return;
     }
 
-    return generatedPrivateKey || getPrivateKey(user.email) || '';
+    const shouldShowQr = !showQr;
+    setShowQr(shouldShowQr);
+
+    if (shouldShowQr && (!privateKeyQr || privateKeyQrContent !== storedPrivateKey)) {
+      await prepareQrCode(storedPrivateKey);
+    }
   }
 
   async function confirmAccount() {
@@ -251,9 +318,6 @@ export default function AccountScreen() {
   }
 
   if (isAuthenticated && user) {
-    const storedPrivateKey = currentPrivateKey();
-    const privateKeyAvailable = Boolean(storedPrivateKey) || hasPrivateKey(user.email);
-
     return (
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -279,7 +343,7 @@ export default function AccountScreen() {
           <View style={styles.form}>
             <Text style={styles.keyTitle}>Verschluesselung</Text>
             <Text style={styles.keyHint}>
-              {hasPrivateKey(user.email)
+              {privateKeyAvailable
                 ? 'Private Key ist auf diesem Frontend gespeichert.'
                 : 'Fuege deinen Private Key hinzu, um persoenliche Eintraege zu entschluesseln.'}
             </Text>
@@ -288,14 +352,23 @@ export default function AccountScreen() {
                 <MaterialIcons name="autorenew" size={20} color="#2F80ED" />
                 <Text style={styles.keyActionText}>Neuen Private Key erzeugen</Text>
               </Pressable>
-              <Pressable disabled={!privateKeyAvailable} style={[styles.keyActionButton, !privateKeyAvailable && styles.buttonDisabled]} onPress={() => setShowQr((current) => !current)}>
+              <Pressable disabled={!privateKeyAvailable || isKeyLoading} style={[styles.keyActionButton, (!privateKeyAvailable || isKeyLoading) && styles.buttonDisabled]} onPress={toggleQrCode}>
                 <MaterialIcons name="qr-code-2" size={20} color="#2F80ED" />
-                <Text style={styles.keyActionText}>QR-Code</Text>
+                <Text style={styles.keyActionText}>{isKeyLoading ? 'Lade Key' : 'QR-Code'}</Text>
               </Pressable>
             </View>
             {showQr && storedPrivateKey ? (
               <View style={styles.qrBox}>
-                <PrivateKeyQrCode content={storedPrivateKey} />
+                {isQrLoading || !privateKeyQr || privateKeyQrContent !== storedPrivateKey ? (
+                  <View style={styles.qrLoadingBox}>
+                    <Text style={styles.keyHint}>QR-Code wird erzeugt...</Text>
+                    <View style={styles.progressTrack}>
+                      <View style={[styles.progressFill, { width: `${Math.max(8, Math.round(qrProgress * 100))}%` }]} />
+                    </View>
+                  </View>
+                ) : (
+                  <PrivateKeyQrCode qr={privateKeyQr} />
+                )}
                 <Text style={styles.keyHint}>Diesen QR-Code nur auf vertrauenswuerdigen Geraeten anzeigen.</Text>
                 <Text selectable style={styles.privateKeyLabel}>{storedPrivateKey}</Text>
               </View>
@@ -745,6 +818,9 @@ const styles = StyleSheet.create({
   keyActionText: { color: '#2F80ED', flexShrink: 1, fontSize: 13, fontWeight: '800', textAlign: 'center' },
   qrBox: { alignItems: 'center', backgroundColor: '#F9FAFB', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, gap: 10, padding: 12 },
   qrCanvas: { backgroundColor: '#FFFFFF', height: qrSize, overflow: 'hidden', position: 'relative', width: qrSize },
+  qrLoadingBox: { alignItems: 'center', backgroundColor: '#FFFFFF', gap: 12, height: qrSize, justifyContent: 'center', paddingHorizontal: 20, width: qrSize },
+  progressTrack: { backgroundColor: '#EAECF0', borderRadius: 999, height: 8, overflow: 'hidden', width: '100%' },
+  progressFill: { backgroundColor: '#2F80ED', borderRadius: 999, height: '100%' },
   qrModule: { backgroundColor: '#000000', position: 'absolute' },
   scannerBox: { backgroundColor: '#101828', borderRadius: 8, minHeight: 260, overflow: 'hidden' },
   camera: { flex: 1, minHeight: 260 },
