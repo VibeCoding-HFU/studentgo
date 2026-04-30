@@ -1,17 +1,18 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { toQR } from 'toqr';
 
 import { Role, useAuth } from '@/contexts/auth-context';
 import { getBackendUrl } from '@/constants/api';
-import { generateAccountKeyPair, getPrivateKey, hasPrivateKey, savePrivateKey } from '@/lib/client-crypto';
+import { generateAccountKeyPair, getPrivateKey, hasPrivateKey, publicKeyFromPrivateKey, savePrivateKey } from '@/lib/client-crypto';
 
 type Mode = 'login' | 'register';
 const roles: Role[] = ['USER', 'MANAGER', 'ADMIN'];
 const qrSize = 260;
+const qrQuietZone = 4;
 
 function roleLabel(role: Role | null) {
   if (role === 'ADMIN') {
@@ -29,7 +30,7 @@ function RoleComboBox({ value, onChange }: { onChange: (role: Role) => void; val
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <View style={styles.comboBox}>
+    <View style={[styles.comboBox, isOpen && styles.comboBoxOpen]}>
       <Pressable accessibilityRole="combobox" style={styles.comboButton} onPress={() => setIsOpen((current) => !current)}>
         <Text style={styles.comboLabel}>{roleLabel(value)}</Text>
         <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
@@ -55,23 +56,58 @@ function RoleComboBox({ value, onChange }: { onChange: (role: Role) => void; val
   );
 }
 
-function qrDataUri(content: string) {
+function qrRuns(content: string) {
   const matrix = toQR(content);
   const size = Math.sqrt(matrix.length);
-  const cells: string[] = [];
+  const runs: { key: string; width: number; x: number; y: number }[] = [];
 
-  matrix.forEach((cell, index) => {
-    if (!cell) {
-      return;
+  for (let y = 0; y < size; y++) {
+    let runStart: number | null = null;
+
+    for (let x = 0; x <= size; x++) {
+      const isDark = x < size && Boolean(matrix[y * size + x]);
+
+      if (isDark && runStart === null) {
+        runStart = x;
+      }
+
+      if ((!isDark || x === size) && runStart !== null) {
+        runs.push({
+          key: `${y}-${runStart}`,
+          width: x - runStart,
+          x: runStart,
+          y,
+        });
+        runStart = null;
+      }
     }
+  }
 
-    const x = index % size;
-    const y = Math.floor(index / size);
-    cells.push(`<rect x="${x}" y="${y}" width="1" height="1"/>`);
-  });
+  return { runs, size };
+}
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="white"/>${cells.join('')}</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+function PrivateKeyQrCode({ content }: { content: string }) {
+  const qr = useMemo(() => qrRuns(content), [content]);
+  const moduleSize = qrSize / (qr.size + qrQuietZone * 2);
+
+  return (
+    <View style={styles.qrCanvas}>
+      {qr.runs.map((run) => (
+        <View
+          key={run.key}
+          style={[
+            styles.qrModule,
+            {
+              height: moduleSize,
+              left: (run.x + qrQuietZone) * moduleSize,
+              top: (run.y + qrQuietZone) * moduleSize,
+              width: run.width * moduleSize,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
 }
 
 export default function AccountScreen() {
@@ -90,6 +126,7 @@ export default function AccountScreen() {
   const [showKeyWarning, setShowKeyWarning] = useState(false);
   const [showKeyOk, setShowKeyOk] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [showManualInput, setShowManualInput] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -126,24 +163,13 @@ export default function AccountScreen() {
     }
 
     try {
-      const parsed = JSON.parse(privateKeyInput);
-      if (!parsed.d || !parsed.n || !parsed.e) {
-        throw new Error('ungueltig');
-      }
+      const publicKeyJson = publicKeyFromPrivateKey(privateKeyInput);
 
       savePrivateKey(user.email, privateKeyInput);
       setKeyVersion((current) => current + 1);
 
-      if (!user.publicKeyJson) {
-        const publicKeyJson = JSON.stringify({
-          alg: parsed.alg,
-          e: parsed.e,
-          ext: true,
-          key_ops: ['encrypt'],
-          kty: parsed.kty,
-          n: parsed.n,
-        });
-        await fetch(`${backendUrl}/api/account/public-key`, {
+      if (user.publicKeyJson !== publicKeyJson) {
+        const response = await fetch(`${backendUrl}/api/account/public-key`, {
           body: JSON.stringify({ publicKeyJson }),
           headers: {
             Authorization: `Bearer ${token}`,
@@ -151,10 +177,16 @@ export default function AccountScreen() {
           },
           method: 'PATCH',
         });
+
+        if (!response.ok) {
+          throw new Error('public-key');
+        }
+
         updatePublicKey(publicKeyJson);
       }
 
       setPrivateKeyInput('');
+      setShowManualInput(false);
       setMessage('Private Key wurde auf diesem Frontend gespeichert.');
     } catch {
       setError('Private Key konnte nicht gelesen werden. Fuege den kompletten JSON-Key ein.');
@@ -263,8 +295,9 @@ export default function AccountScreen() {
             </View>
             {showQr && storedPrivateKey ? (
               <View style={styles.qrBox}>
-                <Image source={{ uri: qrDataUri(storedPrivateKey) }} style={styles.qrImage} />
+                <PrivateKeyQrCode content={storedPrivateKey} />
                 <Text style={styles.keyHint}>Diesen QR-Code nur auf vertrauenswuerdigen Geraeten anzeigen.</Text>
+                <Text selectable style={styles.privateKeyLabel}>{storedPrivateKey}</Text>
               </View>
             ) : null}
             <Pressable style={styles.keyActionButton} onPress={() => setScannerOpen((current) => !current)}>
@@ -278,6 +311,7 @@ export default function AccountScreen() {
                     barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                     onBarcodeScanned={({ data }) => {
                       setPrivateKeyInput(data);
+                      setShowManualInput(true);
                       setScannerOpen(false);
                     }}
                     style={styles.camera}
@@ -290,14 +324,20 @@ export default function AccountScreen() {
                 )}
               </View>
             ) : null}
-            <TextInput
-              multiline
-              placeholder="Private Key JSON"
-              placeholderTextColor="#98A2B3"
-              style={[styles.input, styles.keyInput]}
-              value={privateKeyInput}
-              onChangeText={setPrivateKeyInput}
-            />
+            <Pressable style={styles.keyActionButton} onPress={() => setShowManualInput((current) => !current)}>
+              <MaterialIcons name="edit" size={20} color="#2F80ED" />
+              <Text style={styles.keyActionText}>Private Key manuell eingeben</Text>
+            </Pressable>
+            {showManualInput ? (
+              <TextInput
+                multiline
+                placeholder="Private Key JSON"
+                placeholderTextColor="#98A2B3"
+                style={[styles.input, styles.keyInput]}
+                value={privateKeyInput}
+                onChangeText={setPrivateKeyInput}
+              />
+            ) : null}
             {message ? <Text style={styles.success}>{message}</Text> : null}
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <Pressable style={styles.button} onPress={storePrivateKey}>
@@ -521,7 +561,11 @@ const styles = StyleSheet.create({
   },
   comboBox: {
     position: 'relative',
-    zIndex: 2,
+    zIndex: 1,
+  },
+  comboBoxOpen: {
+    elevation: 12,
+    zIndex: 1000,
   },
   comboButton: {
     alignItems: 'center',
@@ -544,8 +588,10 @@ const styles = StyleSheet.create({
     borderColor: '#D0D5DD',
     borderRadius: 8,
     borderWidth: 1,
+    elevation: 12,
     marginTop: 6,
     overflow: 'hidden',
+    zIndex: 1001,
   },
   comboOption: {
     minHeight: 44,
@@ -681,6 +727,7 @@ const styles = StyleSheet.create({
   keyInput: { minHeight: 110, textAlignVertical: 'top' },
   keyBox: { backgroundColor: '#F9FAFB', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, gap: 8, padding: 12 },
   keyText: { color: '#344054', fontSize: 11, lineHeight: 16 },
+  privateKeyLabel: { color: '#344054', fontSize: 9, lineHeight: 13 },
   keyActionRow: { flexDirection: 'row', gap: 10 },
   keyActionButton: {
     alignItems: 'center',
@@ -697,7 +744,8 @@ const styles = StyleSheet.create({
   },
   keyActionText: { color: '#2F80ED', flexShrink: 1, fontSize: 13, fontWeight: '800', textAlign: 'center' },
   qrBox: { alignItems: 'center', backgroundColor: '#F9FAFB', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, gap: 10, padding: 12 },
-  qrImage: { height: qrSize, width: qrSize },
+  qrCanvas: { backgroundColor: '#FFFFFF', height: qrSize, overflow: 'hidden', position: 'relative', width: qrSize },
+  qrModule: { backgroundColor: '#000000', position: 'absolute' },
   scannerBox: { backgroundColor: '#101828', borderRadius: 8, minHeight: 260, overflow: 'hidden' },
   camera: { flex: 1, minHeight: 260 },
   modalOverlay: {

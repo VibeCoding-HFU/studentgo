@@ -10,7 +10,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const theme = colorScheme === 'dark' ? 'dark' : 'light';
-  const { isAdminMode, isAuthenticated, isManagerMode } = useAuth();
+  const { isAdminMode, isManagerMode } = useAuth();
 
   return (
     <Tabs
@@ -64,7 +64,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="requests"
         options={{
-          href: isAuthenticated ? undefined : null,
+          href: null,
           title: 'Anfragen',
           tabBarIcon: ({ color }) => <MaterialIcons size={25} name="notifications" color={color} />,
         }}

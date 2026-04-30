@@ -733,7 +733,6 @@ async function importStarPlanSchedule(input: {
       where: {
         ownerId: input.userId,
         source: "STARPLAN",
-        sourceKey: { startsWith: `${cacheKey}:` },
       },
     });
 

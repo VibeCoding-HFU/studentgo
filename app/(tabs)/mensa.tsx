@@ -9,15 +9,53 @@ type Meal = {
   canteen: { name: string };
   currency: string;
   day: string;
+  date?: string | null;
   id: number;
   mainDish: string;
   priceCents: number;
   vegetarianDish?: string | null;
 };
 
+type GroupedMeals = {
+  canteenName: string;
+  day: string;
+  id: string;
+  meals: Meal[];
+};
+
+function mealLabel(meal: Meal, index: number) {
+  return meal.mainDish.match(/^Essen\s+\d+/i)?.[0] ?? `Essen ${index + 1}`;
+}
+
+function mealTitle(meal: Meal) {
+  return meal.mainDish.replace(/^Essen\s+\d+\s*:\s*/i, '').trim();
+}
+
 export default function MensaScreen() {
   const backendUrl = useMemo(() => getBackendUrl(), []);
   const [meals, setMeals] = useState<Meal[]>([]);
+  const groupedMeals = useMemo(() => {
+    const groups = new Map<string, GroupedMeals>();
+
+    meals.forEach((meal) => {
+      const groupId = `${meal.date ?? meal.day}-${meal.canteen.name}`;
+      const existingGroup = groups.get(groupId);
+
+      if (existingGroup) {
+        existingGroup.meals.push(meal);
+        return;
+      }
+
+      groups.set(groupId, {
+        canteenName: meal.canteen.name,
+        day: meal.day,
+        id: groupId,
+        meals: [meal],
+      });
+    });
+
+    return [...groups.values()];
+  }, [meals]);
 
   const loadMeals = useCallback(async () => {
     const response = await fetch(`${backendUrl}/api/meals`);
@@ -48,14 +86,29 @@ export default function MensaScreen() {
           </View>
         </View>
 
-        <View style={styles.mealList}>
+        <View style={styles.dayList}>
           {meals.length === 0 ? <Text style={styles.empty}>Keine Mensa-Eintraege vorhanden.</Text> : null}
-          {meals.map((meal) => (
-            <View key={meal.id} style={styles.mealCard}>
-              <Text style={styles.day}>{meal.day} · {meal.canteen.name}</Text>
-              <Text style={styles.mealTitle}>{meal.mainDish}</Text>
-              {meal.vegetarianDish ? <Text style={styles.mealAlt}>Vegetarisch: {meal.vegetarianDish}</Text> : null}
-              <Text style={styles.price}>{(meal.priceCents / 100).toFixed(2)} {meal.currency}</Text>
+          {groupedMeals.map((group) => (
+            <View key={group.id} style={styles.dayCard}>
+              <Text style={styles.day}>{group.day} · {group.canteenName}</Text>
+              <View style={styles.mealList}>
+                {group.meals.map((meal, index) => {
+                  const title = mealTitle(meal);
+                  const vegetarianDish = meal.vegetarianDish?.trim();
+                  const showVegetarianDish = vegetarianDish && vegetarianDish !== title;
+
+                  return (
+                    <View key={meal.id} style={[styles.mealItem, index > 0 && styles.mealItemDivider]}>
+                      <View style={styles.mealHeader}>
+                        <Text style={styles.mealLabel}>{mealLabel(meal, index)}</Text>
+                        <Text style={styles.price}>{(meal.priceCents / 100).toFixed(2)} {meal.currency}</Text>
+                      </View>
+                      <Text style={styles.mealTitle}>{title}</Text>
+                      {showVegetarianDish ? <Text style={styles.mealAlt}>{vegetarianDish}</Text> : null}
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           ))}
         </View>
@@ -75,11 +128,16 @@ const styles = StyleSheet.create({
   summaryText: { flex: 1 },
   summaryTitle: { color: '#FFFFFF', fontSize: 21, fontWeight: '800' },
   summaryMeta: { color: '#D6F3EC', fontSize: 14, lineHeight: 20, marginTop: 3 },
-  mealList: { gap: 12 },
+  dayList: { gap: 12 },
   empty: { color: '#667085', fontSize: 14, lineHeight: 20 },
-  mealCard: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, padding: 16 },
-  day: { color: '#16A085', fontSize: 13, fontWeight: '800', marginBottom: 8, textTransform: 'uppercase' },
+  dayCard: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, padding: 16 },
+  day: { color: '#16A085', fontSize: 13, fontWeight: '800', marginBottom: 12, textTransform: 'uppercase' },
+  mealList: { gap: 12 },
+  mealItem: { gap: 6 },
+  mealItemDivider: { borderColor: '#EAECF0', borderTopWidth: 1, paddingTop: 12 },
+  mealHeader: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'space-between' },
+  mealLabel: { color: '#344054', fontSize: 13, fontWeight: '800' },
   mealTitle: { color: '#101828', fontSize: 17, fontWeight: '800', lineHeight: 23 },
-  mealAlt: { color: '#475467', fontSize: 14, lineHeight: 20, marginTop: 6 },
-  price: { color: '#B54708', fontSize: 14, fontWeight: '800', marginTop: 10 },
+  mealAlt: { color: '#475467', fontSize: 14, lineHeight: 20 },
+  price: { color: '#B54708', flexShrink: 0, fontSize: 14, fontWeight: '800' },
 });

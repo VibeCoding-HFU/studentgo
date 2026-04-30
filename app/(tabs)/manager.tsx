@@ -6,7 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { getBackendUrl } from '@/constants/api';
 import { useAuth } from '@/contexts/auth-context';
 
-type Entity = 'CONTACT' | 'DEADLINE' | 'MEAL' | 'LESSON' | 'STUDY_INFO';
+type Entity = 'CONTACT' | 'MEAL' | 'LESSON' | 'STUDY_INFO';
+type ChangeEntity = Entity | 'DEADLINE';
 type Action = 'CREATE' | 'UPDATE' | 'DELETE';
 
 type Contact = {
@@ -16,13 +17,6 @@ type Contact = {
   phone?: string | null;
   role: string;
   room?: string | null;
-};
-
-type Deadline = {
-  date: string;
-  description?: string | null;
-  id: number;
-  title: string;
 };
 
 type Meal = {
@@ -40,8 +34,11 @@ type ScheduleDay = {
   day: string;
   id: number;
   lessons: {
+    date?: string | null;
+    description?: string | null;
     endTime: string;
     id: number;
+    isRecurring?: boolean;
     lecturer?: string | null;
     room?: string | null;
     startTime: string;
@@ -59,20 +56,72 @@ type StudyInfo = {
 type ChangeRequest = {
   action: Action;
   createdAt: string;
-  entity: Entity;
+  entity: ChangeEntity;
   id: number;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
 };
 
 const emptyContact = { email: '', name: '', phone: '', role: '', room: '' };
-const emptyDeadline = { date: '', description: '', title: '' };
 const emptyMeal = { canteenName: '', currency: 'EUR', date: '', day: '', mainDish: '', priceCents: '', vegetarianDish: '' };
-const emptyLesson = { day: '', endTime: '', lecturer: '', room: '', startTime: '', title: '' };
+const emptyLesson = { date: '', day: '', description: '', endTime: '09:45', isRecurring: false, lecturer: '', room: '', startTime: '08:15', title: '' };
 const emptyInfo = { category: 'Allgemein', content: '', title: '' };
 const actions: Action[] = ['CREATE', 'UPDATE', 'DELETE'];
+const dayNames = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+const dayOptions = dayNames.map((day) => ({ id: day, name: day }));
+const currencyOptions = ['EUR', 'USD', 'CHF'].map((currency) => ({ id: currency, name: currency }));
+const timeOptions = Array.from({ length: 57 }, (_value, index) => {
+  const minutes = 6 * 60 + index * 15;
+  const time = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  return { id: time, name: time };
+});
+
+type Option = { id: number | string; name: string; shortname?: string };
 
 function formatDate(value: string) {
   return value.includes('T') ? value.slice(0, 10) : value;
+}
+
+function startOfWeek(date = new Date()) {
+  const result = new Date(date);
+  const day = result.getDay() || 7;
+  result.setHours(0, 0, 0, 0);
+  result.setDate(result.getDate() - day + 1);
+  return result;
+}
+
+function addDays(date: Date, days: number) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function toInputDate(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function formatDisplayDate(date: Date) {
+  return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+}
+
+function formatFullDate(value: string) {
+  if (!value) {
+    return 'Datum auswaehlen';
+  }
+
+  return new Date(`${value}T12:00:00`).toLocaleDateString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+}
+
+function dayFromDate(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  return dayNames[(date.getDay() + 6) % 7];
 }
 
 function statusLabel(status: ChangeRequest['status']) {
@@ -99,37 +148,84 @@ function actionLabel(action: Action) {
   return 'Anlegen';
 }
 
-function ActionComboBox({ value, onChange }: { onChange: (action: Action) => void; value: Action }) {
+function ComboBox<T extends Option>({ disabled, label, onChange, options, value }: {
+  disabled?: boolean;
+  label: string;
+  onChange: (option: T) => void;
+  options: T[];
+  value: T | null;
+}) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <View style={styles.comboBox}>
-      <Pressable accessibilityRole="combobox" style={styles.comboButton} onPress={() => setIsOpen((current) => !current)}>
-        <Text style={styles.comboLabel}>{actionLabel(value)}</Text>
+    <View style={[styles.comboBox, isOpen && styles.comboBoxOpen]}>
+      <Text style={styles.comboTitle}>{label}</Text>
+      <Pressable accessibilityRole="combobox" disabled={disabled} style={[styles.comboButton, disabled && styles.buttonDisabled]} onPress={() => setIsOpen((current) => !current)}>
+        <Text style={styles.comboLabel}>{value?.shortname ?? value?.name ?? 'Auswaehlen'}</Text>
         <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
       </Pressable>
-      {isOpen ? (
+      {isOpen && !disabled ? (
         <View style={styles.comboMenu}>
-          {actions.map((nextAction) => (
-            <Pressable
-              key={nextAction}
-              style={[styles.comboOption, value === nextAction && styles.comboOptionActive]}
-              onPress={() => {
-                onChange(nextAction);
-                setIsOpen(false);
-              }}>
-              <Text style={[styles.comboOptionText, value === nextAction && styles.comboOptionTextActive]}>
-                {actionLabel(nextAction)}
-              </Text>
-            </Pressable>
-          ))}
+          <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled style={styles.comboMenuScroll}>
+            {options.map((option) => (
+              <Pressable
+                key={String(option.id)}
+                style={[styles.comboOption, value?.id === option.id && styles.comboOptionActive]}
+                onPress={() => {
+                  onChange(option);
+                  setIsOpen(false);
+                }}>
+                <Text style={[styles.comboOptionText, value?.id === option.id && styles.comboOptionTextActive]}>
+                  {option.shortname ? `${option.shortname} - ${option.name}` : option.name}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
       ) : null}
     </View>
   );
 }
 
-function itemMeta(item: Contact | Deadline | Meal | (ScheduleDay['lessons'][number] & { day: string }) | StudyInfo) {
+function ActionComboBox({ value, onChange }: { onChange: (action: Action) => void; value: Action }) {
+  const actionOptions = actions.map((nextAction) => ({ id: nextAction, name: actionLabel(nextAction) }));
+  const selectedAction = actionOptions.find((option) => option.id === value) ?? actionOptions[0];
+
+  return <ComboBox label="Aktion" options={actionOptions} value={selectedAction} onChange={(option) => onChange(option.id as Action)} />;
+}
+
+function WeekDatePicker({ value, onChange }: { onChange: (date: string) => void; value: string }) {
+  const selectedDate = value ? new Date(`${value}T12:00:00`) : new Date();
+  const [pickerWeek, setPickerWeek] = useState(startOfWeek(selectedDate));
+  const days = dayNames.map((day, index) => {
+    const date = addDays(pickerWeek, index);
+    return { day, date, value: toInputDate(date) };
+  });
+
+  return (
+    <View style={styles.datePicker}>
+      <View style={styles.datePickerHeader}>
+        <Pressable style={styles.smallIconButton} onPress={() => setPickerWeek((current) => addDays(current, -7))}>
+          <MaterialIcons name="chevron-left" size={22} color="#2F80ED" />
+        </Pressable>
+        <Text style={styles.datePickerTitle}>{formatDisplayDate(pickerWeek)} - {formatDisplayDate(addDays(pickerWeek, 6))}</Text>
+        <Pressable style={styles.smallIconButton} onPress={() => setPickerWeek((current) => addDays(current, 7))}>
+          <MaterialIcons name="chevron-right" size={22} color="#2F80ED" />
+        </Pressable>
+      </View>
+      <View style={styles.dateGrid}>
+        {days.map((day) => (
+          <Pressable key={day.value} style={[styles.dateChip, value === day.value && styles.dateChipActive]} onPress={() => onChange(day.value)}>
+            <Text style={[styles.dateChipDay, value === day.value && styles.dateChipTextActive]}>{day.day.slice(0, 2)}</Text>
+            <Text style={[styles.dateChipDate, value === day.value && styles.dateChipTextActive]}>{formatDisplayDate(day.date)}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function itemMeta(item: Contact | Meal | (ScheduleDay['lessons'][number] & { day: string }) | StudyInfo) {
   if ('email' in item) {
     return item.email;
   }
@@ -152,16 +248,16 @@ export default function ManagerScreen() {
   const [action, setAction] = useState<Action>('CREATE');
   const [targetId, setTargetId] = useState<number | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [deadlines, setDeadlines] = useState<Deadline[]>([]);
   const [meals, setMeals] = useState<Meal[]>([]);
   const [lessons, setLessons] = useState<(ScheduleDay['lessons'][number] & { day: string })[]>([]);
   const [infos, setInfos] = useState<StudyInfo[]>([]);
   const [requests, setRequests] = useState<ChangeRequest[]>([]);
   const [contactForm, setContactForm] = useState(emptyContact);
-  const [deadlineForm, setDeadlineForm] = useState(emptyDeadline);
   const [mealForm, setMealForm] = useState(emptyMeal);
   const [lessonForm, setLessonForm] = useState(emptyLesson);
   const [infoForm, setInfoForm] = useState(emptyInfo);
+  const [mealDatePickerOpen, setMealDatePickerOpen] = useState(false);
+  const [lessonDatePickerOpen, setLessonDatePickerOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -169,13 +265,17 @@ export default function ManagerScreen() {
   const selectedItems =
     entity === 'CONTACT'
       ? contacts
-      : entity === 'DEADLINE'
-        ? deadlines
-        : entity === 'MEAL'
-          ? meals
-          : entity === 'LESSON'
-            ? lessons
-            : infos;
+      : entity === 'MEAL'
+        ? meals
+        : entity === 'LESSON'
+          ? lessons
+          : infos;
+  const selectedCurrency = useMemo(() => currencyOptions.find((option) => option.id === mealForm.currency) ?? currencyOptions[0], [mealForm.currency]);
+  const selectedMealDay = useMemo(() => dayOptions.find((option) => option.id === mealForm.day) ?? null, [mealForm.day]);
+  const selectedLessonDay = useMemo(() => dayOptions.find((option) => option.id === lessonForm.day) ?? dayOptions[0], [lessonForm.day]);
+  const selectedStartTime = useMemo(() => timeOptions.find((option) => option.id === lessonForm.startTime) ?? timeOptions[0], [lessonForm.startTime]);
+  const selectedEndTime = useMemo(() => timeOptions.find((option) => option.id === lessonForm.endTime) ?? timeOptions[15], [lessonForm.endTime]);
+  const visibleRequests = useMemo(() => requests.filter((request) => request.entity !== 'DEADLINE'), [requests]);
 
   const loadData = useCallback(async () => {
     if (!token) {
@@ -186,16 +286,15 @@ export default function ManagerScreen() {
     setError('');
 
     try {
-      const [contactsResponse, deadlinesResponse, mealsResponse, scheduleResponse, infoResponse, requestsResponse] = await Promise.all([
+      const [contactsResponse, mealsResponse, scheduleResponse, infoResponse, requestsResponse] = await Promise.all([
         fetch(`${backendUrl}/api/contacts`),
-        fetch(`${backendUrl}/api/deadlines`),
         fetch(`${backendUrl}/api/meals`),
         fetch(`${backendUrl}/api/schedule`),
         fetch(`${backendUrl}/api/study-info`),
         fetch(`${backendUrl}/api/manager/change-requests`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
-      if (!contactsResponse.ok || !deadlinesResponse.ok || !mealsResponse.ok || !scheduleResponse.ok || !infoResponse.ok || !requestsResponse.ok) {
+      if (!contactsResponse.ok || !mealsResponse.ok || !scheduleResponse.ok || !infoResponse.ok || !requestsResponse.ok) {
         throw new Error('Verwaltungsdaten konnten nicht geladen werden.');
       }
 
@@ -203,7 +302,6 @@ export default function ManagerScreen() {
       const schedule = scheduleBody.days;
       const info = (await infoResponse.json()) as { spo: StudyInfo[] };
       setContacts((await contactsResponse.json()) as Contact[]);
-      setDeadlines((await deadlinesResponse.json()) as Deadline[]);
       setMeals((await mealsResponse.json()) as Meal[]);
       setLessons(schedule.flatMap((day) => day.lessons.map((lesson) => ({ ...lesson, day: day.day }))));
       setInfos(info.spo);
@@ -222,10 +320,11 @@ export default function ManagerScreen() {
   function resetForm(nextEntity = entity) {
     setTargetId(null);
     setContactForm(emptyContact);
-    setDeadlineForm(emptyDeadline);
     setMealForm(emptyMeal);
     setLessonForm(emptyLesson);
     setInfoForm(emptyInfo);
+    setMealDatePickerOpen(false);
+    setLessonDatePickerOpen(false);
 
     if (action !== 'CREATE') {
       setAction('CREATE');
@@ -240,15 +339,16 @@ export default function ManagerScreen() {
     setAction(nextAction);
     setTargetId(null);
     setContactForm(emptyContact);
-    setDeadlineForm(emptyDeadline);
     setMealForm(emptyMeal);
     setLessonForm(emptyLesson);
     setInfoForm(emptyInfo);
+    setMealDatePickerOpen(false);
+    setLessonDatePickerOpen(false);
     setError('');
     setMessage('');
   }
 
-  function selectItem(item: Contact | Deadline | Meal | (ScheduleDay['lessons'][number] & { day: string }) | StudyInfo) {
+  function selectItem(item: Contact | Meal | (ScheduleDay['lessons'][number] & { day: string }) | StudyInfo) {
     setTargetId(item.id);
 
     if (entity === 'CONTACT') {
@@ -259,16 +359,6 @@ export default function ManagerScreen() {
         phone: contact.phone ?? '',
         role: contact.role,
         room: contact.room ?? '',
-      });
-      return;
-    }
-
-    if (entity === 'DEADLINE') {
-      const deadline = item as Deadline;
-      setDeadlineForm({
-        date: formatDate(deadline.date),
-        description: deadline.description ?? '',
-        title: deadline.title,
       });
       return;
     }
@@ -290,8 +380,11 @@ export default function ManagerScreen() {
     if (entity === 'LESSON') {
       const lesson = item as ScheduleDay['lessons'][number] & { day: string };
       setLessonForm({
+        date: lesson.date ? formatDate(lesson.date) : '',
         day: lesson.day,
+        description: lesson.description ?? '',
         endTime: lesson.endTime,
+        isRecurring: lesson.isRecurring ?? !lesson.date,
         lecturer: lesson.lecturer ?? '',
         room: lesson.room ?? '',
         startTime: lesson.startTime,
@@ -315,13 +408,14 @@ export default function ManagerScreen() {
     const payload =
       entity === 'CONTACT'
         ? contactForm
-        : entity === 'DEADLINE'
-          ? deadlineForm
-          : entity === 'MEAL'
-            ? { ...mealForm, priceCents: Number(mealForm.priceCents) }
-            : entity === 'LESSON'
-              ? lessonForm
-              : infoForm;
+        : entity === 'MEAL'
+          ? { ...mealForm, priceCents: Number(mealForm.priceCents) }
+          : entity === 'LESSON'
+            ? {
+                ...lessonForm,
+                date: lessonForm.isRecurring ? '' : lessonForm.date,
+              }
+            : infoForm;
 
     if (action !== 'CREATE' && !targetId) {
       setError('Waehle zuerst einen bestehenden Eintrag aus.');
@@ -385,12 +479,6 @@ export default function ManagerScreen() {
             <MaterialIcons name="contacts" size={20} color={entity === 'CONTACT' ? '#FFFFFF' : '#475467'} />
             <Text style={[styles.toggleText, entity === 'CONTACT' && styles.toggleTextActive]}>Kontakte</Text>
           </Pressable>
-          <Pressable style={[styles.toggleButton, entity === 'DEADLINE' && styles.toggleButtonActive]} onPress={() => resetForm('DEADLINE')}>
-            <MaterialIcons name="event-available" size={20} color={entity === 'DEADLINE' ? '#FFFFFF' : '#475467'} />
-            <Text style={[styles.toggleText, entity === 'DEADLINE' && styles.toggleTextActive]}>Fristen</Text>
-          </Pressable>
-        </View>
-        <View style={styles.toggleRow}>
           <Pressable style={[styles.toggleButton, entity === 'MEAL' && styles.toggleButtonActive]} onPress={() => resetForm('MEAL')}>
             <MaterialIcons name="restaurant" size={20} color={entity === 'MEAL' ? '#FFFFFF' : '#475467'} />
             <Text style={[styles.toggleText, entity === 'MEAL' && styles.toggleTextActive]}>Mensa</Text>
@@ -431,29 +519,67 @@ export default function ManagerScreen() {
               <TextInput placeholder="Telefon" placeholderTextColor="#98A2B3" style={styles.input} value={contactForm.phone} onChangeText={(phone) => setContactForm((current) => ({ ...current, phone }))} />
               <TextInput placeholder="Raum" placeholderTextColor="#98A2B3" style={styles.input} value={contactForm.room} onChangeText={(room) => setContactForm((current) => ({ ...current, room }))} />
             </>
-          ) : entity === 'DEADLINE' ? (
-            <>
-              <TextInput placeholder="Titel" placeholderTextColor="#98A2B3" style={styles.input} value={deadlineForm.title} onChangeText={(title) => setDeadlineForm((current) => ({ ...current, title }))} />
-              <TextInput placeholder="Datum, z. B. 2026-05-30" placeholderTextColor="#98A2B3" style={styles.input} value={deadlineForm.date} onChangeText={(date) => setDeadlineForm((current) => ({ ...current, date }))} />
-              <TextInput multiline placeholder="Beschreibung" placeholderTextColor="#98A2B3" style={[styles.input, styles.textArea]} value={deadlineForm.description} onChangeText={(description) => setDeadlineForm((current) => ({ ...current, description }))} />
-            </>
           ) : entity === 'MEAL' ? (
             <>
               <TextInput placeholder="Mensa" placeholderTextColor="#98A2B3" style={styles.input} value={mealForm.canteenName} onChangeText={(canteenName) => setMealForm((current) => ({ ...current, canteenName }))} />
-              <TextInput placeholder="Tag" placeholderTextColor="#98A2B3" style={styles.input} value={mealForm.day} onChangeText={(day) => setMealForm((current) => ({ ...current, day }))} />
-              <TextInput placeholder="Datum dieser Woche, z. B. 2026-05-01" placeholderTextColor="#98A2B3" style={styles.input} value={mealForm.date} onChangeText={(date) => setMealForm((current) => ({ ...current, date }))} />
+              <View>
+                <Text style={styles.comboTitle}>Datum</Text>
+                <Pressable style={styles.dateField} onPress={() => setMealDatePickerOpen((current) => !current)}>
+                  <MaterialIcons name="calendar-month" size={21} color="#2F80ED" />
+                  <Text style={styles.dateFieldText}>{formatFullDate(mealForm.date)}</Text>
+                  <MaterialIcons name={mealDatePickerOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
+                </Pressable>
+                {mealDatePickerOpen ? (
+                  <WeekDatePicker value={mealForm.date} onChange={(date) => {
+                    setMealForm((current) => ({ ...current, date, day: dayFromDate(date) }));
+                    setMealDatePickerOpen(false);
+                  }} />
+                ) : null}
+              </View>
+              <ComboBox label="Wochentag" options={dayOptions} value={selectedMealDay} onChange={(option) => setMealForm((current) => ({ ...current, day: String(option.id) }))} />
               <TextInput placeholder="Hauptgericht" placeholderTextColor="#98A2B3" style={styles.input} value={mealForm.mainDish} onChangeText={(mainDish) => setMealForm((current) => ({ ...current, mainDish }))} />
               <TextInput placeholder="Vegetarisch optional" placeholderTextColor="#98A2B3" style={styles.input} value={mealForm.vegetarianDish} onChangeText={(vegetarianDish) => setMealForm((current) => ({ ...current, vegetarianDish }))} />
-              <TextInput keyboardType="numeric" placeholder="Preis in Cent" placeholderTextColor="#98A2B3" style={styles.input} value={mealForm.priceCents} onChangeText={(priceCents) => setMealForm((current) => ({ ...current, priceCents }))} />
+              <View style={styles.timeRow}>
+                <TextInput keyboardType="numeric" placeholder="Preis in Cent" placeholderTextColor="#98A2B3" style={[styles.input, styles.flexInput]} value={mealForm.priceCents} onChangeText={(priceCents) => setMealForm((current) => ({ ...current, priceCents }))} />
+                <ComboBox label="Waehrung" options={currencyOptions} value={selectedCurrency} onChange={(option) => setMealForm((current) => ({ ...current, currency: String(option.id) }))} />
+              </View>
             </>
           ) : entity === 'LESSON' ? (
             <>
-              <TextInput placeholder="Tag" placeholderTextColor="#98A2B3" style={styles.input} value={lessonForm.day} onChangeText={(day) => setLessonForm((current) => ({ ...current, day }))} />
-              <TextInput placeholder="Start" placeholderTextColor="#98A2B3" style={styles.input} value={lessonForm.startTime} onChangeText={(startTime) => setLessonForm((current) => ({ ...current, startTime }))} />
-              <TextInput placeholder="Ende" placeholderTextColor="#98A2B3" style={styles.input} value={lessonForm.endTime} onChangeText={(endTime) => setLessonForm((current) => ({ ...current, endTime }))} />
+              <Pressable
+                style={[styles.segmentButton, lessonForm.isRecurring && styles.segmentButtonActive]}
+                onPress={() => setLessonForm((current) => ({ ...current, isRecurring: !current.isRecurring }))}>
+                <MaterialIcons name="event-repeat" size={21} color={lessonForm.isRecurring ? '#FFFFFF' : '#2F80ED'} />
+                <Text style={[styles.segmentButtonText, lessonForm.isRecurring && styles.segmentButtonTextActive]}>
+                  Woechentlich wiederholen
+                </Text>
+              </Pressable>
+              {lessonForm.isRecurring ? (
+                <ComboBox label="Wochentag" options={dayOptions} value={selectedLessonDay} onChange={(option) => setLessonForm((current) => ({ ...current, day: String(option.id) }))} />
+              ) : (
+                <View>
+                  <Text style={styles.comboTitle}>Datum</Text>
+                  <Pressable style={styles.dateField} onPress={() => setLessonDatePickerOpen((current) => !current)}>
+                    <MaterialIcons name="calendar-month" size={21} color="#2F80ED" />
+                    <Text style={styles.dateFieldText}>{formatFullDate(lessonForm.date)}</Text>
+                    <MaterialIcons name={lessonDatePickerOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
+                  </Pressable>
+                  {lessonDatePickerOpen ? (
+                    <WeekDatePicker value={lessonForm.date} onChange={(date) => {
+                      setLessonForm((current) => ({ ...current, date, day: dayFromDate(date) }));
+                      setLessonDatePickerOpen(false);
+                    }} />
+                  ) : null}
+                </View>
+              )}
+              <View style={styles.timeRow}>
+                <ComboBox label="Start" options={timeOptions} value={selectedStartTime} onChange={(option) => setLessonForm((current) => ({ ...current, startTime: String(option.id) }))} />
+                <ComboBox label="Ende" options={timeOptions} value={selectedEndTime} onChange={(option) => setLessonForm((current) => ({ ...current, endTime: String(option.id) }))} />
+              </View>
               <TextInput placeholder="Titel" placeholderTextColor="#98A2B3" style={styles.input} value={lessonForm.title} onChangeText={(title) => setLessonForm((current) => ({ ...current, title }))} />
               <TextInput placeholder="Raum" placeholderTextColor="#98A2B3" style={styles.input} value={lessonForm.room} onChangeText={(room) => setLessonForm((current) => ({ ...current, room }))} />
               <TextInput placeholder="Dozierende" placeholderTextColor="#98A2B3" style={styles.input} value={lessonForm.lecturer} onChangeText={(lecturer) => setLessonForm((current) => ({ ...current, lecturer }))} />
+              <TextInput multiline placeholder="Beschreibung optional" placeholderTextColor="#98A2B3" style={[styles.input, styles.textArea]} value={lessonForm.description} onChangeText={(description) => setLessonForm((current) => ({ ...current, description }))} />
             </>
           ) : (
             <>
@@ -486,14 +612,14 @@ export default function ManagerScreen() {
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Meine Anfragen</Text>
-          <Text style={styles.sectionCount}>{requests.length}</Text>
+          <Text style={styles.sectionCount}>{visibleRequests.length}</Text>
         </View>
 
         <View style={styles.itemList}>
-          {requests.map((request) => (
+          {visibleRequests.map((request) => (
             <View key={request.id} style={styles.requestCard}>
               <Text style={styles.itemTitle}>
-                {request.entity === 'CONTACT' ? 'Kontakt' : request.entity === 'DEADLINE' ? 'Frist' : request.entity === 'MEAL' ? 'Mensa' : request.entity === 'LESSON' ? 'Plan' : 'Info'} · {request.action === 'CREATE' ? 'Neu' : request.action === 'UPDATE' ? 'Bearbeiten' : 'Loeschen'}
+                {request.entity === 'CONTACT' ? 'Kontakt' : request.entity === 'MEAL' ? 'Mensa' : request.entity === 'LESSON' ? 'Plan' : 'Info'} · {request.action === 'CREATE' ? 'Neu' : request.action === 'UPDATE' ? 'Bearbeiten' : 'Loeschen'}
               </Text>
               <Text style={styles.itemMeta}>{statusLabel(request.status)}</Text>
             </View>
@@ -537,6 +663,7 @@ const styles = StyleSheet.create({
   },
   toggleRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 12,
   },
@@ -550,6 +677,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     justifyContent: 'center',
+    minWidth: '47%',
     minHeight: 44,
   },
   toggleButtonActive: {
@@ -565,9 +693,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   comboBox: {
+    flex: 1,
     marginBottom: 14,
     position: 'relative',
-    zIndex: 2,
+    zIndex: 1,
+  },
+  comboBoxOpen: {
+    elevation: 12,
+    zIndex: 1000,
+  },
+  comboTitle: {
+    color: '#344054',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 6,
   },
   comboButton: {
     alignItems: 'center',
@@ -590,8 +729,14 @@ const styles = StyleSheet.create({
     borderColor: '#D0D5DD',
     borderRadius: 8,
     borderWidth: 1,
+    elevation: 12,
     marginTop: 6,
+    maxHeight: 220,
     overflow: 'hidden',
+    zIndex: 1001,
+  },
+  comboMenuScroll: {
+    maxHeight: 220,
   },
   comboOption: {
     justifyContent: 'center',
@@ -697,9 +842,121 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
+  flexInput: {
+    flex: 1,
+  },
   textArea: {
     minHeight: 86,
     textAlignVertical: 'top',
+  },
+  dateField: {
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderColor: '#D0D5DD',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 9,
+    minHeight: 46,
+    paddingHorizontal: 12,
+  },
+  dateFieldText: {
+    color: '#101828',
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  datePicker: {
+    backgroundColor: '#F9FAFB',
+    borderColor: '#E4E7EC',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    marginTop: 8,
+    padding: 10,
+  },
+  datePickerHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  datePickerTitle: {
+    color: '#101828',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  dateGrid: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  dateChip: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D0D5DD',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 54,
+    justifyContent: 'center',
+  },
+  dateChipActive: {
+    backgroundColor: '#2F80ED',
+    borderColor: '#2F80ED',
+  },
+  dateChipDay: {
+    color: '#475467',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  dateChipDate: {
+    color: '#101828',
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  dateChipTextActive: {
+    color: '#FFFFFF',
+  },
+  smallIconButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D0D5DD',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  timeRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  segmentButton: {
+    alignItems: 'center',
+    backgroundColor: '#EEF4FF',
+    borderColor: '#B2CCFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 46,
+    paddingHorizontal: 12,
+  },
+  segmentButtonActive: {
+    backgroundColor: '#2F80ED',
+    borderColor: '#2F80ED',
+  },
+  segmentButtonText: {
+    color: '#2F80ED',
+    flexShrink: 1,
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  segmentButtonTextActive: {
+    color: '#FFFFFF',
   },
   button: {
     alignItems: 'center',

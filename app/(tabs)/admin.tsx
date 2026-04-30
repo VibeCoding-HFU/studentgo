@@ -56,7 +56,7 @@ function RoleComboBox({ value, onChange }: { onChange: (role: Role) => void; val
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <View style={styles.comboBox}>
+    <View style={[styles.comboBox, isOpen && styles.comboBoxOpen]}>
       <Pressable accessibilityRole="combobox" style={styles.comboButton} onPress={() => setIsOpen((current) => !current)}>
         <Text style={styles.comboLabel}>{roleLabel(value)}</Text>
         <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
@@ -517,7 +517,11 @@ const styles = StyleSheet.create({
   },
   comboBox: {
     position: 'relative',
-    zIndex: 2,
+    zIndex: 1,
+  },
+  comboBoxOpen: {
+    elevation: 12,
+    zIndex: 1000,
   },
   comboButton: {
     alignItems: 'center',
@@ -540,8 +544,10 @@ const styles = StyleSheet.create({
     borderColor: '#D0D5DD',
     borderRadius: 8,
     borderWidth: 1,
+    elevation: 12,
     marginTop: 6,
     overflow: 'hidden',
+    zIndex: 1001,
   },
   comboOption: {
     justifyContent: 'center',

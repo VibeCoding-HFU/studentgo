@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BackendStatusBadge } from '@/components/backend-status-badge';
 import { getBackendUrl } from '@/constants/api';
 import { useAuth } from '@/contexts/auth-context';
-import { decryptPayload, encryptPayload, getPrivateKey } from '@/lib/client-crypto';
+import { decryptPayload, encryptPayload, getPrivateKey, publicKeyFromPrivateKey } from '@/lib/client-crypto';
 
 type Lesson = {
   date?: string | null;
@@ -49,6 +49,27 @@ type UserOption = {
   id: number;
   name: string;
   publicKeyJson?: string | null;
+};
+type Invitation = {
+  createdAt: string;
+  encryptedKey?: string | null;
+  encryptedPayload?: string | null;
+  encryptionIv?: string | null;
+  id: number;
+  lesson: {
+    date?: string | null;
+    description?: string | null;
+    endTime: string;
+    isRecurring: boolean;
+    scheduleDay: { day: string };
+    startTime: string;
+    title: string;
+  };
+  sender: {
+    email: string;
+    name: string;
+  };
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
 };
 
 const dayNames = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
@@ -99,6 +120,26 @@ function formatDisplayDate(date: Date) {
   return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
 }
 
+function formatInvitationDate(value?: string | null) {
+  if (!value) {
+    return 'woechentlich';
+  }
+
+  return new Date(value).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function invitationStatusLabel(status: Invitation['status']) {
+  if (status === 'ACCEPTED') {
+    return 'Angenommen';
+  }
+
+  if (status === 'REJECTED') {
+    return 'Abgelehnt';
+  }
+
+  return 'Offen';
+}
+
 function uniqueOptions(options: Option[]) {
   const seen = new Set<string>();
   return options.filter((option) => {
@@ -141,7 +182,7 @@ function ComboBox<T extends Option>({ disabled, label, onChange, options, value 
   const [open, setOpen] = useState(false);
 
   return (
-    <View style={styles.comboBox}>
+    <View style={[styles.comboBox, open && styles.comboBoxOpen]}>
       <Text style={styles.comboTitle}>{label}</Text>
       <Pressable disabled={disabled} style={[styles.comboButton, disabled && styles.disabled]} onPress={() => setOpen((current) => !current)}>
         <Text style={styles.comboLabel}>{value?.shortname ?? value?.name ?? 'Auswaehlen'}</Text>
@@ -149,11 +190,13 @@ function ComboBox<T extends Option>({ disabled, label, onChange, options, value 
       </Pressable>
       {open && !disabled ? (
         <View style={styles.comboMenu}>
-          {options.map((option) => (
-            <Pressable key={String(option.id)} style={styles.comboOption} onPress={() => { onChange(option); setOpen(false); }}>
-              <Text style={styles.comboOptionText}>{option.shortname ? `${option.shortname} - ${option.name}` : option.name}</Text>
-            </Pressable>
-          ))}
+          <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled style={styles.comboMenuScroll}>
+            {options.map((option) => (
+              <Pressable key={String(option.id)} style={styles.comboOption} onPress={() => { onChange(option); setOpen(false); }}>
+                <Text style={styles.comboOptionText}>{option.shortname ? `${option.shortname} - ${option.name}` : option.name}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
       ) : null}
     </View>
@@ -207,8 +250,12 @@ export default function ScheduleScreen() {
   const [accountQuery, setAccountQuery] = useState('');
   const [accountResults, setAccountResults] = useState<UserOption[]>([]);
   const [invitees, setInvitees] = useState<UserOption[]>([]);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [formError, setFormError] = useState('');
+  const [formMessage, setFormMessage] = useState('');
+  const [importError, setImportError] = useState('');
+  const [importMessage, setImportMessage] = useState('');
+  const [invitationError, setInvitationError] = useState('');
   const parsedGroups = useMemo(() => options.groups.map(parseGroup).filter((group): group is ParsedGroup => Boolean(group)), [options.groups]);
   const academicSemesters = useMemo(() => uniqueOptions(parsedGroups.map((group) => ({
     id: group.semester,
@@ -290,6 +337,51 @@ export default function ScheduleScreen() {
     }
   }, [backendUrl, token, user?.email, weekStart]);
 
+  const loadInvitations = useCallback(async () => {
+    if (!token) {
+      setInvitations([]);
+      return;
+    }
+
+    const response = await fetch(`${backendUrl}/api/schedule/invitations`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      setInvitationError('Anfragen konnten nicht geladen werden.');
+      return;
+    }
+
+    const data = (await response.json()) as Invitation[];
+    const privateKey = user?.email ? getPrivateKey(user.email) : null;
+    const decrypted = await Promise.all(data.map(async (invitation) => {
+      if (!privateKey || !invitation.encryptedPayload || !invitation.encryptedKey || !invitation.encryptionIv) {
+        return invitation;
+      }
+
+      try {
+        const payload = await decryptPayload<{ description?: string; title?: string }>(privateKey, {
+          encryptedKey: invitation.encryptedKey,
+          encryptedPayload: invitation.encryptedPayload,
+          encryptionIv: invitation.encryptionIv,
+        });
+        return {
+          ...invitation,
+          lesson: {
+            ...invitation.lesson,
+            description: payload.description ?? invitation.lesson.description,
+            title: payload.title ?? invitation.lesson.title,
+          },
+        };
+      } catch {
+        return invitation;
+      }
+    }));
+
+    setInvitationError('');
+    setInvitations(decrypted);
+  }, [backendUrl, token, user?.email]);
+
   useEffect(() => {
     loadOptions();
   }, [loadOptions]);
@@ -297,6 +389,10 @@ export default function ScheduleScreen() {
   useEffect(() => {
     loadSchedule();
   }, [loadSchedule]);
+
+  useEffect(() => {
+    loadInvitations();
+  }, [loadInvitations]);
 
   useEffect(() => {
     loadGroups(faculty, semester);
@@ -342,16 +438,16 @@ export default function ScheduleScreen() {
   const weekDays = useMemo(() => dayNames.map((day, index) => ({ day, date: addDays(weekStart, index) })), [weekStart]);
 
   async function importSchedule() {
-    setError('');
-    setMessage('');
+    setImportError('');
+    setImportMessage('');
 
     if (!canImport) {
-      setError('Waehle alle Importoptionen aus.');
+      setImportError('Waehle alle Importoptionen aus.');
       return;
     }
 
     if (!token) {
-      setError('Melde dich an, um den Stundenplan zu importieren.');
+      setImportError('Melde dich an, um den Stundenplan zu importieren.');
       return;
     }
 
@@ -373,36 +469,50 @@ export default function ScheduleScreen() {
     });
 
     if (!response.ok) {
-      setError('Stundenplan konnte nicht importiert werden.');
+      setImportError('Stundenplan konnte nicht importiert werden.');
       return;
     }
 
     const result = (await response.json()) as { count: number };
-    setMessage(`${result.count} Termine importiert.`);
+    setImportMessage(`${result.count} Termine importiert. Alte Import-Eintraege wurden entfernt.`);
     await loadSchedule();
   }
 
   async function addLesson() {
-    setError('');
-    setMessage('');
+    setFormError('');
+    setFormMessage('');
 
     if (!token) {
-      setError('Melde dich an, um persoenliche Planeintraege zu speichern.');
+      setFormError('Melde dich an, um persoenliche Planeintraege zu speichern.');
       return;
     }
 
     if (!form.title.trim()) {
-      setError('Gib einen Titel fuer den Planeintrag ein.');
+      setFormError('Gib einen Titel fuer den Planeintrag ein.');
       return;
     }
 
-    if (!user?.publicKeyJson) {
-      setError('Dein Account hat noch keinen Public Key. Lege den Account neu an oder hinterlege den Key im Account-Bereich.');
+    if (!user?.email) {
+      setFormError('Melde dich an, um persoenliche Planeintraege zu speichern.');
+      return;
+    }
+
+    const privateKey = getPrivateKey(user.email);
+    if (!privateKey) {
+      setFormError('Hinterlege deinen Private Key im Account-Bereich, um persoenliche Planeintraege zu speichern und anzuzeigen.');
+      return;
+    }
+
+    let ownerPublicKeyJson: string;
+    try {
+      ownerPublicKeyJson = publicKeyFromPrivateKey(privateKey);
+    } catch {
+      setFormError('Der hinterlegte Private Key konnte nicht gelesen werden. Hinterlege ihn im Account-Bereich erneut.');
       return;
     }
 
     const personalPayload = { description: form.description, title: form.title };
-    const ownerEnvelope = await encryptPayload(user.publicKeyJson, personalPayload);
+    const ownerEnvelope = await encryptPayload(ownerPublicKeyJson, personalPayload);
     const encryptedInvitations = await Promise.all(invitees.map(async (invitee) => {
       if (!invitee.publicKeyJson) {
         throw new Error(`${invitee.name} hat keinen Public Key.`);
@@ -431,14 +541,14 @@ export default function ScheduleScreen() {
     });
 
     if (!response.ok) {
-      setError('Planeintrag konnte nicht gespeichert werden.');
+      setFormError('Planeintrag konnte nicht gespeichert werden.');
       return;
     }
 
     setForm(createEmptyForm());
     setInvitees([]);
     setAccountQuery('');
-    setMessage('Persoenlicher Planeintrag wurde gespeichert.');
+    setFormMessage('Persoenlicher Planeintrag wurde gespeichert.');
     await loadSchedule();
   }
 
@@ -446,6 +556,26 @@ export default function ScheduleScreen() {
     setInvitees((current) => current.some((invitee) => invitee.id === account.id) ? current : [...current, account]);
     setAccountQuery('');
     setAccountResults([]);
+  }
+
+  async function respondToInvitation(id: number, decision: 'accept' | 'reject') {
+    if (!token) {
+      return;
+    }
+
+    const response = await fetch(`${backendUrl}/api/schedule/invitations/${id}/${decision}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      setInvitationError('Antwort konnte nicht gespeichert werden.');
+      return;
+    }
+
+    setInvitationError('');
+    await loadInvitations();
+    await loadSchedule();
   }
 
   function lessonsForDay(day: string, date: Date) {
@@ -463,17 +593,6 @@ export default function ScheduleScreen() {
           <Text style={styles.title}>Wochenplan</Text>
           <Text style={styles.subtitle}>Importierter Stundenplan und persoenliche Eintraege in einer Wochenansicht.</Text>
           <BackendStatusBadge />
-        </View>
-
-        <View style={styles.importPanel}>
-          <ComboBox label="Planungssemester" options={options.semesters} value={semester} onChange={(nextSemester) => { setSemester(nextSemester); setAcademicSemester(null); setSpecialization(null); }} />
-          <ComboBox label="Fakultaet / Studiengang" options={options.faculties} value={faculty} onChange={(nextFaculty) => { setFaculty(nextFaculty); setAcademicSemester(null); setSpecialization(null); }} />
-          <ComboBox disabled={!faculty || academicSemesters.length === 0} label="Fachsemester" options={academicSemesters} value={academicSemester} onChange={(nextSemester) => { setAcademicSemester(nextSemester); setSpecialization(null); }} />
-          <ComboBox disabled={!academicSemester || specializations.length === 0} label="Vertiefungsrichtung" options={specializations} value={specialization} onChange={setSpecialization} />
-          <Pressable disabled={!canImport} style={[styles.importButton, !canImport && styles.importButtonDisabled]} onPress={importSchedule}>
-            <MaterialIcons name="download" size={22} color="#FFFFFF" />
-            <Text style={styles.importButtonText}>Stundenplan importieren</Text>
-          </Pressable>
         </View>
 
         <View style={styles.weekNav}>
@@ -508,6 +627,49 @@ export default function ScheduleScreen() {
               </View>
             );
           })}
+        </View>
+
+        <View style={styles.requestsPanel}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Terminanfragen</Text>
+              <Text style={styles.panelHint}>Einladungen zu persoenlichen Terminen annehmen oder ablehnen.</Text>
+            </View>
+            <Text style={styles.sectionCount}>{invitations.filter((invitation) => invitation.status === 'PENDING').length}</Text>
+          </View>
+
+          {invitationError ? <Text style={styles.error}>{invitationError}</Text> : null}
+          {invitations.length === 0 ? <Text style={styles.empty}>Keine Terminanfragen vorhanden.</Text> : null}
+          <View style={styles.requestList}>
+            {invitations.map((invitation) => (
+              <View key={invitation.id} style={styles.requestCard}>
+                <View style={styles.requestCardHeader}>
+                  <Text style={styles.requestTitle}>{invitation.lesson.title}</Text>
+                  <Text style={[styles.requestStatus, invitation.status === 'PENDING' && styles.requestStatusPending]}>
+                    {invitationStatusLabel(invitation.status)}
+                  </Text>
+                </View>
+                <Text style={styles.requestMeta}>
+                  {invitation.lesson.scheduleDay.day} · {formatInvitationDate(invitation.lesson.date)} · {invitation.lesson.startTime} - {invitation.lesson.endTime}
+                </Text>
+                <Text style={styles.requestMeta}>Von {invitation.sender.name} · {invitation.sender.email}</Text>
+                {invitation.lesson.description ? <Text style={styles.requestDescription}>{invitation.lesson.description}</Text> : null}
+
+                {invitation.status === 'PENDING' ? (
+                  <View style={styles.requestActions}>
+                    <Pressable style={styles.acceptButton} onPress={() => respondToInvitation(invitation.id, 'accept')}>
+                      <MaterialIcons name="check" size={20} color="#FFFFFF" />
+                      <Text style={styles.requestActionText}>Annehmen</Text>
+                    </Pressable>
+                    <Pressable style={styles.rejectButton} onPress={() => respondToInvitation(invitation.id, 'reject')}>
+                      <MaterialIcons name="close" size={20} color="#FFFFFF" />
+                      <Text style={styles.requestActionText}>Ablehnen</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </View>
         </View>
 
         <View style={styles.personalPanel}>
@@ -600,14 +762,29 @@ export default function ScheduleScreen() {
                 ) : null}
               </View>
 
-              {message ? <Text style={styles.success}>{message}</Text> : null}
-              {error ? <Text style={styles.error}>{error}</Text> : null}
+              {formMessage ? <Text style={styles.success}>{formMessage}</Text> : null}
+              {formError ? <Text style={styles.error}>{formError}</Text> : null}
               <Pressable style={styles.button} onPress={addLesson}>
                 <MaterialIcons name="add" size={22} color="#FFFFFF" />
                 <Text style={styles.buttonText}>Persoenlichen Planeintrag speichern</Text>
               </Pressable>
             </View>
           ) : null}
+        </View>
+
+        <View style={styles.importPanel}>
+          <Text style={styles.sectionTitle}>Stundenplan importieren</Text>
+          <Text style={styles.panelHint}>Ein neuer Import ersetzt alle bisherigen importierten Stundenplan-Eintraege.</Text>
+          <ComboBox label="Planungssemester" options={options.semesters} value={semester} onChange={(nextSemester) => { setSemester(nextSemester); setAcademicSemester(null); setSpecialization(null); }} />
+          <ComboBox label="Fakultaet / Studiengang" options={options.faculties} value={faculty} onChange={(nextFaculty) => { setFaculty(nextFaculty); setAcademicSemester(null); setSpecialization(null); }} />
+          <ComboBox disabled={!faculty || academicSemesters.length === 0} label="Fachsemester" options={academicSemesters} value={academicSemester} onChange={(nextSemester) => { setAcademicSemester(nextSemester); setSpecialization(null); }} />
+          <ComboBox disabled={!academicSemester || specializations.length === 0} label="Vertiefungsrichtung" options={specializations} value={specialization} onChange={setSpecialization} />
+          {importMessage ? <Text style={styles.success}>{importMessage}</Text> : null}
+          {importError ? <Text style={styles.error}>{importError}</Text> : null}
+          <Pressable disabled={!canImport} style={[styles.importButton, !canImport && styles.importButtonDisabled]} onPress={importSchedule}>
+            <MaterialIcons name="download" size={22} color="#FFFFFF" />
+            <Text style={styles.importButtonText}>Stundenplan importieren</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -621,12 +798,14 @@ const styles = StyleSheet.create({
   kicker: { color: '#2F80ED', fontSize: 14, fontWeight: '800', marginBottom: 6, textTransform: 'uppercase' },
   title: { color: '#101828', fontSize: 28, fontWeight: '800', lineHeight: 34 },
   subtitle: { color: '#667085', fontSize: 15, lineHeight: 22, marginBottom: 14, marginTop: 8 },
-  importPanel: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, gap: 10, marginBottom: 18, padding: 14 },
-  comboBox: { flex: 1, position: 'relative', zIndex: 2 },
+  importPanel: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, gap: 10, marginTop: 18, padding: 14, zIndex: 1 },
+  comboBox: { flex: 1, position: 'relative', zIndex: 1 },
+  comboBoxOpen: { elevation: 12, zIndex: 1000 },
   comboTitle: { color: '#344054', fontSize: 13, fontWeight: '800', marginBottom: 6 },
   comboButton: { alignItems: 'center', backgroundColor: '#F9FAFB', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 46, paddingHorizontal: 12 },
   comboLabel: { color: '#101828', flex: 1, fontSize: 14, fontWeight: '800' },
-  comboMenu: { backgroundColor: '#FFFFFF', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, marginTop: 6, maxHeight: 220, overflow: 'scroll' },
+  comboMenu: { backgroundColor: '#FFFFFF', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, elevation: 12, marginTop: 6, maxHeight: 220, overflow: 'hidden', zIndex: 1001 },
+  comboMenuScroll: { maxHeight: 220 },
   comboOption: { justifyContent: 'center', minHeight: 42, paddingHorizontal: 12 },
   comboOptionText: { color: '#475467', fontSize: 13, fontWeight: '700' },
   disabled: { opacity: 0.55 },
@@ -655,10 +834,25 @@ const styles = StyleSheet.create({
   personalBadge: { color: '#047857', fontSize: 11, fontWeight: '800' },
   lessonMeta: { color: '#667085', fontSize: 12, lineHeight: 18, marginTop: 4 },
   lessonDescription: { color: '#475467', fontSize: 12, lineHeight: 18, marginTop: 6 },
-  personalPanel: { marginTop: 4 },
+  personalPanel: { marginTop: 4, zIndex: 30 },
   personalHeader: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, padding: 14 },
+  requestsPanel: { marginTop: 18, zIndex: 10 },
+  sectionHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   sectionTitle: { color: '#101828', fontSize: 17, fontWeight: '800' },
+  sectionCount: { color: '#2F80ED', fontSize: 17, fontWeight: '800' },
   panelHint: { color: '#667085', fontSize: 13, lineHeight: 19, marginTop: 3, paddingRight: 8 },
+  requestList: { gap: 12 },
+  requestCard: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, padding: 14 },
+  requestCardHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
+  requestTitle: { color: '#101828', flex: 1, fontSize: 16, fontWeight: '800' },
+  requestStatus: { color: '#667085', fontSize: 12, fontWeight: '800' },
+  requestStatusPending: { color: '#B54708' },
+  requestMeta: { color: '#667085', fontSize: 13, lineHeight: 19, marginTop: 5 },
+  requestDescription: { color: '#475467', fontSize: 13, lineHeight: 19, marginTop: 8 },
+  requestActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  acceptButton: { alignItems: 'center', backgroundColor: '#047857', borderRadius: 8, flex: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', minHeight: 44 },
+  rejectButton: { alignItems: 'center', backgroundColor: '#B42318', borderRadius: 8, flex: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', minHeight: 44 },
+  requestActionText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   segmentButton: { alignItems: 'center', backgroundColor: '#EEF4FF', borderColor: '#B2CCFF', borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 46 },
   segmentButtonActive: { backgroundColor: '#2F80ED', borderColor: '#2F80ED' },
   segmentButtonText: { color: '#2F80ED', fontSize: 14, fontWeight: '800' },
