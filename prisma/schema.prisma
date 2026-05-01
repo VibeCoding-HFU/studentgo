@@ -28,6 +28,8 @@ model User {
   modules      Module[]
   lessons      Lesson[]
   todos        Todo[]
+  lessonVisits LessonVisit[]
+  lessonModulePreferences LessonModulePreference[]
   sentLessonInvitations LessonInvitation[] @relation("LessonInvitationSender")
   receivedLessonInvitations LessonInvitation[] @relation("LessonInvitationRecipient")
   createdAt    DateTime  @default(now())
@@ -227,8 +229,35 @@ model Lesson {
   sourceKey     String?     @unique
   importedAt    DateTime?
   invitations   LessonInvitation[]
+  visits         LessonVisit[]
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+}
+
+model LessonVisit {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId  Int
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  date      DateTime
+  visitedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, lessonId, date])
+}
+
+model LessonModulePreference {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moduleKey String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, moduleKey])
 }
 
 model LessonInvitation {

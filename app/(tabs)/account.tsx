@@ -3,11 +3,16 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import { toQR } from 'toqr';
 
+import { SwipeableTabView } from '@/components/swipeable-tab-view';
+import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { Role, useAuth } from '@/contexts/auth-context';
 import { getBackendUrl } from '@/constants/api';
-import { generateAccountKeyPair, getPrivateKey, hasPrivateKey, publicKeyFromPrivateKey, savePrivateKey } from '@/lib/client-crypto';
+import { useThemedStyles } from '@/hooks/use-themed-styles';
+import { useThemePreference } from '@/contexts/theme-preference-context';
+import { generateAccountKeyPair, getPrivateKey, hasPrivateKey, publicKeyFromPrivateKey, publicKeyValueIncludes, savePrivateKey } from '@/lib/client-crypto';
 
 type Mode = 'login' | 'register';
 const roles: Role[] = ['USER', 'MANAGER', 'ADMIN'];
@@ -27,13 +32,14 @@ function roleLabel(role: Role | null) {
 }
 
 function RoleComboBox({ value, onChange }: { onChange: (role: Role) => void; value: Role }) {
+  const styles = useThemedStyles(baseStyles);
   const [isOpen, setIsOpen] = useState(false);
 
   return (
     <View style={[styles.comboBox, isOpen && styles.comboBoxOpen]}>
       <Pressable accessibilityRole="combobox" style={styles.comboButton} onPress={() => setIsOpen((current) => !current)}>
         <Text style={styles.comboLabel}>{roleLabel(value)}</Text>
-        <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
+        <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" style={styles.chevronIcon} />
       </Pressable>
       {isOpen ? (
         <View style={styles.comboMenu}>
@@ -56,10 +62,10 @@ function RoleComboBox({ value, onChange }: { onChange: (role: Role) => void; val
   );
 }
 
-function qrRuns(content: string) {
+function qrPath(content: string) {
   const matrix = toQR(content);
   const size = Math.sqrt(matrix.length);
-  const runs: { key: string; width: number; x: number; y: number }[] = [];
+  const commands: string[] = [];
 
   for (let y = 0; y < size; y++) {
     let runStart: number | null = null;
@@ -72,47 +78,34 @@ function qrRuns(content: string) {
       }
 
       if ((!isDark || x === size) && runStart !== null) {
-        runs.push({
-          key: `${y}-${runStart}`,
-          width: x - runStart,
-          x: runStart,
-          y,
-        });
+        commands.push(`M${runStart + qrQuietZone} ${y + qrQuietZone}h${x - runStart}v1H${runStart + qrQuietZone}z`);
         runStart = null;
       }
     }
   }
 
-  return { runs, size };
+  return {
+    path: commands.join(''),
+    size: size + qrQuietZone * 2,
+  };
 }
 
-type PrivateKeyQr = ReturnType<typeof qrRuns>;
+type PrivateKeyQr = ReturnType<typeof qrPath>;
 
 const PrivateKeyQrCode = memo(function PrivateKeyQrCode({ qr }: { qr: PrivateKeyQr }) {
-  const moduleSize = qrSize / (qr.size + qrQuietZone * 2);
-
+  const styles = useThemedStyles(baseStyles);
   return (
-    <View style={styles.qrCanvas}>
-      {qr.runs.map((run) => (
-        <View
-          key={run.key}
-          style={[
-            styles.qrModule,
-            {
-              height: moduleSize,
-              left: (run.x + qrQuietZone) * moduleSize,
-              top: (run.y + qrQuietZone) * moduleSize,
-              width: run.width * moduleSize,
-            },
-          ]}
-        />
-      ))}
-    </View>
+    <Svg height={qrSize} style={styles.qrCanvas} viewBox={`0 0 ${qr.size} ${qr.size}`} width={qrSize}>
+      <Path d={`M0 0h${qr.size}v${qr.size}H0z`} fill="#FFFFFF" />
+      <Path d={qr.path} fill="#000000" />
+    </Svg>
   );
 });
 
 export default function AccountScreen() {
+  const styles = useThemedStyles(baseStyles);
   const { activeRole, confirmRegistration, isAuthenticated, login, logout, register, token, updatePublicKey, user } = useAuth();
+  const { preference, togglePreference } = useThemePreference();
   const backendUrl = getBackendUrl();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [mode, setMode] = useState<Mode>('login');
@@ -138,16 +131,17 @@ export default function AccountScreen() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isDarkMode = preference === 'dark';
 
   const prepareQrCode = useCallback(async (privateKeyJson: string) => {
     setIsQrLoading(true);
     setQrProgress(0.18);
     setPrivateKeyQr(null);
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     setQrProgress(0.55);
 
-    const nextQr = qrRuns(privateKeyJson);
+    const nextQr = qrPath(privateKeyJson);
     setPrivateKeyQr(nextQr);
     setPrivateKeyQrContent(privateKeyJson);
     setQrProgress(1);
@@ -195,10 +189,12 @@ export default function AccountScreen() {
       if (mode === 'login') {
         await login(email, password, role);
       } else {
-        const privateKeyJson = await register(name, email, password, role);
+        const { privateKeyJson, privateKeySaved } = await register(name, email, password, role);
         setGeneratedPrivateKey(privateKeyJson);
         await prepareQrCode(privateKeyJson);
-        setMessage('Bestaetigungs-E-Mail wurde versendet. Dein Private Key wurde auf diesem Geraet gespeichert. Bewahre ihn sicher auf.');
+        setMessage(privateKeySaved
+          ? 'Bestaetigungs-E-Mail wurde versendet. Dein Private Key wurde auf diesem Geraet gespeichert. Bewahre ihn sicher auf.'
+          : 'Bestaetigungs-E-Mail wurde versendet. Dein Private Key konnte nicht persistent gespeichert werden. Bewahre den angezeigten Key sicher auf.');
       }
 
       setPassword('');
@@ -227,7 +223,7 @@ export default function AccountScreen() {
       setPrivateKeyQrContent('');
       setShowQr(false);
 
-      if (user.publicKeyJson !== publicKeyJson) {
+      if (!publicKeyValueIncludes(user.publicKeyJson, publicKeyJson)) {
         const response = await fetch(`${backendUrl}/api/account/public-key`, {
           body: JSON.stringify({ publicKeyJson }),
           headers: {
@@ -275,7 +271,6 @@ export default function AccountScreen() {
         throw new Error('public-key');
       }
 
-      await savePrivateKey(user.email, keyPair.privateKeyJson);
       updatePublicKey(keyPair.publicKeyJson);
       setGeneratedPrivateKey(keyPair.privateKeyJson);
       setStoredPrivateKey(keyPair.privateKeyJson);
@@ -283,6 +278,12 @@ export default function AccountScreen() {
       setShowKeyWarning(false);
       setShowQr(true);
       await prepareQrCode(keyPair.privateKeyJson);
+      try {
+        await savePrivateKey(user.email, keyPair.privateKeyJson);
+        setMessage('Neuer Private Key wurde auf diesem Geraet gespeichert.');
+      } catch {
+        setError('Neuer Private Key konnte nicht persistent gespeichert werden. Bewahre den angezeigten Key sicher auf.');
+      }
       setShowKeyOk(true);
     } catch {
       setError('Neuer Private Key konnte nicht erzeugt werden.');
@@ -320,16 +321,18 @@ export default function AccountScreen() {
   if (isAuthenticated && user) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        <SwipeableTabView>
+          <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <Text style={styles.kicker}>Account</Text>
             <Text style={styles.title}>Angemeldet</Text>
             <Text style={styles.subtitle}>Du nutzt StudentGo aktuell als {roleLabel(activeRole)}.</Text>
+            <SyncStatusBadge />
           </View>
 
           <View style={styles.profileCard}>
             <View style={styles.avatar}>
-              <MaterialIcons name="person" size={28} color="#2F80ED" />
+              <MaterialIcons name="person" size={28} color="#00684F" />
             </View>
             <View style={styles.profileContent}>
               <Text style={styles.profileName}>{user.name}</Text>
@@ -340,6 +343,19 @@ export default function AccountScreen() {
             </View>
           </View>
 
+          <Pressable style={[styles.themeToggle, isDarkMode && styles.themeToggleDark]} onPress={togglePreference}>
+            <MaterialIcons name={isDarkMode ? 'light-mode' : 'dark-mode'} size={22} color={isDarkMode ? '#FFD166' : '#00684F'} />
+            <View style={styles.themeToggleContent}>
+              <Text style={[styles.themeToggleTitle, isDarkMode && styles.themeToggleTitleDark]}>
+                {isDarkMode ? 'Light Mode aktivieren' : 'Dark Mode aktivieren'}
+              </Text>
+              <Text style={[styles.themeToggleMeta, isDarkMode && styles.themeToggleMetaDark]}>
+                Aktuell: {isDarkMode ? 'Dark Mode' : 'Light Mode'}
+              </Text>
+            </View>
+            <MaterialIcons name="swap-horiz" size={22} color={isDarkMode ? '#FFFFFF' : '#475467'} />
+          </Pressable>
+
           <View style={styles.form}>
             <Text style={styles.keyTitle}>Verschluesselung</Text>
             <Text style={styles.keyHint}>
@@ -349,11 +365,11 @@ export default function AccountScreen() {
             </Text>
             <View style={styles.keyActionRow}>
               <Pressable style={styles.keyActionButton} onPress={() => setShowKeyWarning(true)}>
-                <MaterialIcons name="autorenew" size={20} color="#2F80ED" />
+                <MaterialIcons name="autorenew" size={20} color="#00684F" />
                 <Text style={styles.keyActionText}>Neuen Private Key erzeugen</Text>
               </Pressable>
               <Pressable disabled={!privateKeyAvailable || isKeyLoading} style={[styles.keyActionButton, (!privateKeyAvailable || isKeyLoading) && styles.buttonDisabled]} onPress={toggleQrCode}>
-                <MaterialIcons name="qr-code-2" size={20} color="#2F80ED" />
+                <MaterialIcons name="qr-code-2" size={20} color="#00684F" />
                 <Text style={styles.keyActionText}>{isKeyLoading ? 'Lade Key' : 'QR-Code'}</Text>
               </Pressable>
             </View>
@@ -374,7 +390,7 @@ export default function AccountScreen() {
               </View>
             ) : null}
             <Pressable style={styles.keyActionButton} onPress={() => setScannerOpen((current) => !current)}>
-              <MaterialIcons name="qr-code-scanner" size={20} color="#2F80ED" />
+              <MaterialIcons name="qr-code-scanner" size={20} color="#00684F" />
               <Text style={styles.keyActionText}>Private Key per QR-Code einlesen</Text>
             </Pressable>
             {scannerOpen ? (
@@ -398,7 +414,7 @@ export default function AccountScreen() {
               </View>
             ) : null}
             <Pressable style={styles.keyActionButton} onPress={() => setShowManualInput((current) => !current)}>
-              <MaterialIcons name="edit" size={20} color="#2F80ED" />
+              <MaterialIcons name="edit" size={20} color="#00684F" />
               <Text style={styles.keyActionText}>Private Key manuell eingeben</Text>
             </Pressable>
             {showManualInput ? (
@@ -454,21 +470,37 @@ export default function AccountScreen() {
               </View>
             </View>
           ) : null}
-        </ScrollView>
+          </ScrollView>
+        </SwipeableTabView>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <SwipeableTabView>
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.kicker}>Account</Text>
           <Text style={styles.title}>{mode === 'login' ? 'Einloggen' : 'Account anlegen'}</Text>
           <Text style={styles.subtitle}>
             Admin-Accounts koennen als Admin, Verwalter oder User arbeiten. Verwalter koennen als Verwalter oder User starten.
           </Text>
+          <SyncStatusBadge />
         </View>
+
+        <Pressable style={[styles.themeToggle, isDarkMode && styles.themeToggleDark]} onPress={togglePreference}>
+          <MaterialIcons name={isDarkMode ? 'light-mode' : 'dark-mode'} size={22} color={isDarkMode ? '#FFD166' : '#00684F'} />
+          <View style={styles.themeToggleContent}>
+            <Text style={[styles.themeToggleTitle, isDarkMode && styles.themeToggleTitleDark]}>
+              {isDarkMode ? 'Light Mode aktivieren' : 'Dark Mode aktivieren'}
+            </Text>
+            <Text style={[styles.themeToggleMeta, isDarkMode && styles.themeToggleMetaDark]}>
+              Aktuell: {isDarkMode ? 'Dark Mode' : 'Light Mode'}
+            </Text>
+          </View>
+          <MaterialIcons name="swap-horiz" size={22} color={isDarkMode ? '#FFFFFF' : '#475467'} />
+        </Pressable>
 
         <View style={styles.switchRow}>
           <Pressable
@@ -550,12 +582,13 @@ export default function AccountScreen() {
             </Pressable>
           </View>
         ) : null}
-      </ScrollView>
+        </ScrollView>
+      </SwipeableTabView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#F5F7FB',
@@ -568,7 +601,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   kicker: {
-    color: '#2F80ED',
+    color: '#00684F',
     fontSize: 14,
     fontWeight: '800',
     marginBottom: 6,
@@ -604,7 +637,7 @@ const styles = StyleSheet.create({
     minHeight: 42,
   },
   switchButtonActive: {
-    backgroundColor: '#2F80ED',
+    backgroundColor: '#00684F',
   },
   switchText: {
     color: '#475467',
@@ -653,9 +686,11 @@ const styles = StyleSheet.create({
   },
   comboLabel: {
     color: '#101828',
+    flex: 1,
     fontSize: 15,
     fontWeight: '800',
   },
+  chevronIcon: { flexShrink: 0, textAlign: 'center', width: 28 },
   comboMenu: {
     backgroundColor: '#FFFFFF',
     borderColor: '#D0D5DD',
@@ -672,7 +707,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   comboOptionActive: {
-    backgroundColor: '#EEF4FF',
+    backgroundColor: '#E7F4EF',
   },
   comboOptionText: {
     color: '#475467',
@@ -680,7 +715,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   comboOptionTextActive: {
-    color: '#2F80ED',
+    color: '#00684F',
   },
   roleToggle: {
     flexDirection: 'row',
@@ -699,8 +734,8 @@ const styles = StyleSheet.create({
     minHeight: 46,
   },
   roleButtonActive: {
-    backgroundColor: '#14213D',
-    borderColor: '#14213D',
+    backgroundColor: '#004B3A',
+    borderColor: '#004B3A',
   },
   roleText: {
     color: '#475467',
@@ -724,7 +759,7 @@ const styles = StyleSheet.create({
   },
   button: {
     alignItems: 'center',
-    backgroundColor: '#2F80ED',
+    backgroundColor: '#00684F',
     borderRadius: 8,
     flexDirection: 'row',
     gap: 8,
@@ -752,7 +787,7 @@ const styles = StyleSheet.create({
   },
   avatar: {
     alignItems: 'center',
-    backgroundColor: '#EEF4FF',
+    backgroundColor: '#E7F4EF',
     borderRadius: 8,
     height: 52,
     justifyContent: 'center',
@@ -773,11 +808,47 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   profileRole: {
-    color: '#2F80ED',
+    color: '#00684F',
     fontSize: 13,
     fontWeight: '800',
     lineHeight: 19,
     marginTop: 6,
+  },
+  themeToggle: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E4E7EC',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+    minHeight: 58,
+    paddingHorizontal: 14,
+  },
+  themeToggleDark: {
+    backgroundColor: '#101828',
+    borderColor: '#344054',
+  },
+  themeToggleContent: {
+    flex: 1,
+  },
+  themeToggleTitle: {
+    color: '#101828',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  themeToggleTitleDark: {
+    color: '#FFFFFF',
+  },
+  themeToggleMeta: {
+    color: '#667085',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  themeToggleMetaDark: {
+    color: '#D0D5DD',
   },
   secondaryButton: {
     alignItems: 'center',
@@ -804,8 +875,8 @@ const styles = StyleSheet.create({
   keyActionRow: { flexDirection: 'row', gap: 10 },
   keyActionButton: {
     alignItems: 'center',
-    backgroundColor: '#EEF4FF',
-    borderColor: '#B2CCFF',
+    backgroundColor: '#E7F4EF',
+    borderColor: '#93D3BA',
     borderRadius: 8,
     borderWidth: 1,
     flex: 1,
@@ -815,13 +886,12 @@ const styles = StyleSheet.create({
     minHeight: 46,
     paddingHorizontal: 10,
   },
-  keyActionText: { color: '#2F80ED', flexShrink: 1, fontSize: 13, fontWeight: '800', textAlign: 'center' },
+  keyActionText: { color: '#00684F', flexShrink: 1, fontSize: 13, fontWeight: '800', textAlign: 'center' },
   qrBox: { alignItems: 'center', backgroundColor: '#F9FAFB', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, gap: 10, padding: 12 },
-  qrCanvas: { backgroundColor: '#FFFFFF', height: qrSize, overflow: 'hidden', position: 'relative', width: qrSize },
+  qrCanvas: { backgroundColor: '#FFFFFF' },
   qrLoadingBox: { alignItems: 'center', backgroundColor: '#FFFFFF', gap: 12, height: qrSize, justifyContent: 'center', paddingHorizontal: 20, width: qrSize },
   progressTrack: { backgroundColor: '#EAECF0', borderRadius: 999, height: 8, overflow: 'hidden', width: '100%' },
-  progressFill: { backgroundColor: '#2F80ED', borderRadius: 999, height: '100%' },
-  qrModule: { backgroundColor: '#000000', position: 'absolute' },
+  progressFill: { backgroundColor: '#00684F', borderRadius: 999, height: '100%' },
   scannerBox: { backgroundColor: '#101828', borderRadius: 8, minHeight: 260, overflow: 'hidden' },
   camera: { flex: 1, minHeight: 260 },
   modalOverlay: {

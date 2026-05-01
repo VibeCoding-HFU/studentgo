@@ -153,7 +153,7 @@ async function createPendingAccount(data: {
       name: data.name,
       passwordHash: passwordData.hash,
       passwordSalt: passwordData.salt,
-      publicKeyJson: data.publicKeyJson ?? null,
+      publicKeyJson: data.publicKeyJson ? addPublicKeyToValue(null, data.publicKeyJson) : null,
       requestedById: data.requestedById ?? null,
       role: data.role,
     },
@@ -198,6 +198,34 @@ function publicUser(user: { id: number; name: string; email: string; publicKeyJs
     publicKeyJson: user.publicKeyJson,
     role: user.role,
   };
+}
+
+function publicKeyJsonsFromValue(value?: string | null) {
+  if (!value?.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (Array.isArray(parsed)) {
+      return [...new Set(parsed.filter((item): item is string => typeof item === "string" && Boolean(item.trim())))];
+    }
+  } catch {
+    // Older rows may contain a single public JWK string.
+  }
+
+  return [value];
+}
+
+function addPublicKeyToValue(value: string | null | undefined, publicKeyJson: string) {
+  const keys = publicKeyJsonsFromValue(value);
+
+  if (!keys.includes(publicKeyJson)) {
+    keys.push(publicKeyJson);
+  }
+
+  return JSON.stringify(keys);
 }
 
 async function createSession(userId: number, activeRole: Role) {
@@ -320,6 +348,13 @@ function startOfWeek(date = new Date()) {
   return start;
 }
 
+function startOfMonth(date = new Date()) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(1);
+  return start;
+}
+
 function toDateInput(date: Date) {
   return [
     date.getFullYear(),
@@ -333,9 +368,19 @@ function parseDateInput(value: string) {
   return new Date(year, month - 1, day);
 }
 
+function timeToMinutes(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
 function parseWeekStart(value: unknown) {
   const input = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? parseDateInput(value.trim()) : new Date();
   return startOfWeek(Number.isNaN(input.getTime()) ? new Date() : input);
+}
+
+function parseMonthStart(value: unknown) {
+  const input = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? parseDateInput(value.trim()) : new Date();
+  return startOfMonth(Number.isNaN(input.getTime()) ? new Date() : input);
 }
 
 function decodeHtml(value: string) {
@@ -355,6 +400,26 @@ function endOfWeek(date = new Date()) {
   const end = startOfWeek(date);
   end.setDate(end.getDate() + 7);
   return end;
+}
+
+function endOfMonth(date = new Date()) {
+  const end = startOfMonth(date);
+  end.setMonth(end.getMonth() + 1);
+  return end;
+}
+
+function weeksForMonth(monthStart: Date) {
+  const monthEnd = endOfMonth(monthStart);
+  const weeks: Date[] = [];
+  let weekStart = startOfWeek(monthStart);
+
+  while (weekStart < monthEnd) {
+    weeks.push(new Date(weekStart));
+    weekStart = new Date(weekStart);
+    weekStart.setDate(weekStart.getDate() + 7);
+  }
+
+  return weeks;
 }
 
 function stripHtml(value: string) {
@@ -519,6 +584,43 @@ function lessonData(payload: Record<string, unknown>, scheduleDayId: number) {
   };
 }
 
+type LessonModuleKeyInput = {
+  endTime: string;
+  lecturer: string | null;
+  room: string | null;
+  scheduleDayId: number;
+  source: string;
+  startTime: string;
+  title: string;
+};
+
+function lessonModuleKey(lesson: LessonModuleKeyInput) {
+  const source = lesson.source === "STARPLAN_ARCHIVE" ? "STARPLAN" : lesson.source;
+
+  return [
+    source,
+    lesson.scheduleDayId,
+    lesson.startTime,
+    lesson.endTime,
+    lesson.title.trim().toLowerCase(),
+    lesson.room?.trim().toLowerCase() ?? "",
+    lesson.lecturer?.trim().toLowerCase() ?? "",
+  ].join("|");
+}
+
+function lessonsOverlap(first: { endTime: string; startTime: string }, second: { endTime: string; startTime: string }) {
+  return timeToMinutes(first.startTime) < timeToMinutes(second.endTime)
+    && timeToMinutes(second.startTime) < timeToMinutes(first.endTime);
+}
+
+function dateForScheduleDay(weekStart: Date, dayName: string) {
+  const mondayFirstDays = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+  const offset = Math.max(0, mondayFirstDays.indexOf(dayName));
+  const date = new Date(weekStart);
+  date.setDate(date.getDate() + offset);
+  return date;
+}
+
 async function getOrCreateScheduleDay(day: string, transaction: typeof prisma = prisma) {
   const cleanDay = day.trim();
   const existingDay = await transaction.scheduleDay.findUnique({ where: { day: cleanDay } });
@@ -665,48 +767,72 @@ function parseStarPlanTimetable(html: string, weekStart: Date) {
     .filter((event): event is NonNullable<typeof event> => Boolean(event));
 }
 
-async function importStarPlanSchedule(input: {
+type StarPlanImportInput = {
   facultyId: string;
   facultyName: string;
+  monthStart: Date;
   semesterId: string;
   semesterName: string;
   specialization?: string | null;
   studyGroup: string;
   userId: number;
-  weekStart: Date;
-}) {
+};
+
+type StarPlanParsedLesson = ReturnType<typeof parseStarPlanTimetable>[number];
+
+async function loadStarPlanMonth(input: StarPlanImportInput) {
+  const monthStart = startOfMonth(input.monthStart);
+  const monthEnd = endOfMonth(monthStart);
   const cacheKey = [
+    "month",
     input.semesterId,
     input.facultyId,
     input.studyGroup,
     input.specialization ?? "standard",
-    toDateInput(input.weekStart),
+    toDateInput(monthStart),
   ].join(":");
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const existingCache = await prisma.scheduleImportCache.findUnique({ where: { cacheKey } });
-  let parsedLessons: ReturnType<typeof parseStarPlanTimetable>;
+  let parsedLessons: StarPlanParsedLesson[];
 
   if (existingCache && existingCache.importedAt >= todayStart) {
-    parsedLessons = JSON.parse(existingCache.payloadJson) as ReturnType<typeof parseStarPlanTimetable>;
+    parsedLessons = JSON.parse(existingCache.payloadJson) as StarPlanParsedLesson[];
   } else {
-    const params = new URLSearchParams({
-      dfc: toDateInput(input.weekStart),
-      m: "getTT",
-      og: input.facultyId,
-      pg: input.studyGroup,
-      pu: input.semesterId,
-      sa: "false",
-      sd: "true",
-      sel: "pg",
-    });
-    const response = await fetch(`${STARPLAN_BASE_URL}/json?${params.toString()}`);
+    const weeklyLessons = await Promise.all(weeksForMonth(monthStart).map(async (weekStart) => {
+      const params = new URLSearchParams({
+        dfc: toDateInput(weekStart),
+        m: "getTT",
+        og: input.facultyId,
+        pg: input.studyGroup,
+        pu: input.semesterId,
+        sa: "false",
+        sd: "true",
+        sel: "pg",
+      });
+      const response = await fetch(`${STARPLAN_BASE_URL}/json?${params.toString()}`);
 
-    if (!response.ok) {
-      throw new Error(`StarPlan timetable failed with status ${response.status}`);
-    }
+      if (!response.ok) {
+        throw new Error(`StarPlan timetable failed with status ${response.status}`);
+      }
 
-    parsedLessons = parseStarPlanTimetable(await response.text(), input.weekStart);
+      return parseStarPlanTimetable(await response.text(), weekStart);
+    }));
+
+    parsedLessons = weeklyLessons
+      .flat()
+      .filter((lesson) => {
+        const date = parseDateInput(lesson.date);
+        return date >= monthStart && date < monthEnd;
+      })
+      .filter((lesson, index, lessons) => lessons.findIndex((candidate) => (
+        candidate.date === lesson.date
+        && candidate.startTime === lesson.startTime
+        && candidate.endTime === lesson.endTime
+        && candidate.title === lesson.title
+        && candidate.room === lesson.room
+        && candidate.lecturer === lesson.lecturer
+      )) === index);
     await prisma.scheduleImportCache.upsert({
       create: {
         cacheKey,
@@ -718,45 +844,138 @@ async function importStarPlanSchedule(input: {
         semesterName: input.semesterName,
         specialization: input.specialization,
         studyGroup: input.studyGroup,
-        weekStart: input.weekStart,
+        weekStart: monthStart,
       },
       update: {
         importedAt: new Date(),
         payloadJson: JSON.stringify(parsedLessons),
+        weekStart: monthStart,
       },
       where: { cacheKey },
     });
   }
 
+  return { cacheKey, lessons: parsedLessons, monthEnd, monthStart };
+}
+
+async function importStarPlanSchedule(input: StarPlanImportInput & {
+  courseTitle?: string | null;
+  replaceMonth?: boolean;
+}) {
+  const monthImport = await loadStarPlanMonth(input);
+  const parsedLessons = input.courseTitle
+    ? monthImport.lessons.filter((lesson) => lesson.title === input.courseTitle)
+    : monthImport.lessons;
+
   await prisma.$transaction(async (transaction) => {
-    await transaction.lesson.deleteMany({
+    const importedAt = new Date();
+    const existingLessons = await transaction.lesson.findMany({
       where: {
+        date: { gte: monthImport.monthStart, lt: monthImport.monthEnd },
         ownerId: input.userId,
-        source: "STARPLAN",
+        source: { in: ["STARPLAN", "STARPLAN_ARCHIVE"] },
       },
     });
+    const handledLessonIds = new Set<number>();
 
-    for (const lesson of parsedLessons) {
-      const day = await getOrCreateScheduleDay(lesson.day, transaction as typeof prisma);
-      await transaction.lesson.create({
-        data: {
-          date: new Date(`${lesson.date}T12:00:00`),
-          endTime: lesson.endTime,
-          importedAt: new Date(),
-          lecturer: lesson.lecturer,
+    if (input.replaceMonth) {
+      await transaction.lesson.updateMany({
+        data: { source: "STARPLAN_ARCHIVE" },
+        where: {
+          date: { gte: monthImport.monthStart, lt: monthImport.monthEnd },
           ownerId: input.userId,
-          room: lesson.room,
-          scheduleDayId: day.id,
           source: "STARPLAN",
-          sourceKey: `${cacheKey}:${lesson.date}:${lesson.startTime}:${lesson.title}:${lesson.room ?? ""}`,
-          startTime: lesson.startTime,
-          title: lesson.title,
+        },
+      });
+    } else if (input.courseTitle) {
+      await transaction.lesson.updateMany({
+        data: { source: "STARPLAN_ARCHIVE" },
+        where: {
+          date: { gte: monthImport.monthStart, lt: monthImport.monthEnd },
+          ownerId: input.userId,
+          source: "STARPLAN",
+          title: input.courseTitle,
         },
       });
     }
+
+    for (const lesson of parsedLessons) {
+      const day = await getOrCreateScheduleDay(lesson.day, transaction as typeof prisma);
+      const sourceKey = [
+        "starplan",
+        input.userId,
+        monthImport.cacheKey,
+        lesson.date,
+        lesson.startTime,
+        lesson.endTime,
+        lesson.title,
+        lesson.room ?? "",
+      ].join(":");
+      const exactLesson = existingLessons.find((existingLesson) => (
+        existingLesson.sourceKey === sourceKey
+        || (
+          existingLesson.date
+          && toDateInput(existingLesson.date) === lesson.date
+          && existingLesson.startTime === lesson.startTime
+          && existingLesson.endTime === lesson.endTime
+          && existingLesson.title === lesson.title
+          && (existingLesson.room ?? "") === (lesson.room ?? "")
+          && (existingLesson.lecturer ?? "") === (lesson.lecturer ?? "")
+        )
+      ));
+      const lessonPayload = {
+        date: new Date(`${lesson.date}T12:00:00`),
+        endTime: lesson.endTime,
+        importedAt,
+        lecturer: lesson.lecturer,
+        ownerId: input.userId,
+        room: lesson.room,
+        scheduleDayId: day.id,
+        source: "STARPLAN",
+        sourceKey,
+        startTime: lesson.startTime,
+        title: lesson.title,
+      };
+
+      if (exactLesson) {
+        await transaction.lesson.update({
+          data: lessonPayload,
+          where: { id: exactLesson.id },
+        });
+        handledLessonIds.add(exactLesson.id);
+        continue;
+      }
+
+      const conflictingLessons = existingLessons.filter((existingLesson) => {
+        if (handledLessonIds.has(existingLesson.id) || !existingLesson.date) {
+          return false;
+        }
+
+        return toDateInput(existingLesson.date) === lesson.date && lessonsOverlap(existingLesson, lesson);
+      });
+
+      for (const conflictingLesson of conflictingLessons) {
+        await transaction.lesson.update({
+          data: { source: "STARPLAN_ARCHIVE" },
+          where: { id: conflictingLesson.id },
+        });
+        handledLessonIds.add(conflictingLesson.id);
+      }
+
+      const createdLesson = await transaction.lesson.create({
+        data: {
+          ...lessonPayload,
+        },
+      });
+      handledLessonIds.add(createdLesson.id);
+    }
   });
 
-  return parsedLessons.length;
+  return {
+    lessons: parsedLessons,
+    monthEnd: monthImport.monthEnd,
+    monthStart: monthImport.monthStart,
+  };
 }
 
 async function applyManagementChange(requestId: number, adminId: number) {
@@ -1019,12 +1238,66 @@ app.patch("/api/account/public-key", async (request, response) => {
     return;
   }
 
+  const existingUser = await prisma.user.findUnique({
+    select: { publicKeyJson: true },
+    where: { id: session.userId },
+  });
+
   const user = await prisma.user.update({
-    data: { publicKeyJson },
+    data: { publicKeyJson: addPublicKeyToValue(existingUser?.publicKeyJson, publicKeyJson) },
     where: { id: session.userId },
   });
 
   response.json(publicUser(user));
+});
+
+app.get("/api/account/statistics", async (request, response) => {
+  const session = await getSession(request);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  const lessons = await prisma.lesson.findMany({
+    where: {
+      OR: [{ ownerId: null }, { ownerId: session.userId }],
+    },
+  });
+  const moduleKeys = [...new Set(lessons.map(lessonModuleKey))];
+  const preferences = moduleKeys.length
+    ? await prisma.lessonModulePreference.findMany({
+        where: {
+          moduleKey: { in: moduleKeys },
+          userId: session.userId,
+        },
+      })
+    : [];
+  const preferenceByModuleKey = new Map(preferences.map((preference) => [preference.moduleKey, preference]));
+  const activeLessons = lessons.filter((lesson) => preferenceByModuleKey.get(lessonModuleKey(lesson))?.isActive !== false);
+  const activeDatedLessons = activeLessons.filter((lesson): lesson is typeof lesson & { date: Date } => Boolean(lesson.date));
+  const dateByLessonId = new Map(activeDatedLessons.map((lesson) => [lesson.id, toDateInput(lesson.date)]));
+  const visits = activeDatedLessons.length
+    ? await prisma.lessonVisit.findMany({
+        select: {
+          date: true,
+          lessonId: true,
+        },
+        where: {
+          lessonId: { in: activeDatedLessons.map((lesson) => lesson.id) },
+          userId: session.userId,
+        },
+      })
+    : [];
+  const visitedLessonIds = new Set(visits
+    .filter((visit) => dateByLessonId.get(visit.lessonId) === toDateInput(visit.date))
+    .map((visit) => visit.lessonId));
+
+  response.json({
+    courseCount: new Set(activeLessons.filter((lesson) => ["STARPLAN", "STARPLAN_ARCHIVE"].includes(lesson.source)).map(lessonModuleKey)).size,
+    totalEvents: activeDatedLessons.length,
+    visitedEvents: visitedLessonIds.size,
+  });
 });
 
 app.get("/api/admin/summary", requireAdmin, async (_request, response) => {
@@ -1305,9 +1578,9 @@ app.get("/api/canteens", async (_request, response) => {
   response.json(canteens);
 });
 
-app.get("/api/meals", async (_request, response) => {
-  const weekStart = startOfWeek();
-  const weekEnd = endOfWeek();
+app.get("/api/meals", async (request, response) => {
+  const weekStart = parseWeekStart(request.query.weekStart);
+  const weekEnd = endOfWeek(weekStart);
   const meals = await prisma.mealPlan.findMany({
     include: { canteen: true },
     orderBy: [{ date: "asc" }, { id: "asc" }],
@@ -1562,14 +1835,63 @@ app.get("/api/schedule", async (request, response) => {
         orderBy: { startTime: "asc" },
         where: {
           OR: [{ ownerId: null }, ...(session ? [{ ownerId: session.userId }] : [])],
-          AND: [{ OR: [{ date: null }, { date: { gte: weekStart, lt: weekEnd } }] }],
+          AND: [
+            { OR: [{ date: null }, { date: { gte: weekStart, lt: weekEnd } }] },
+            { source: { not: "STARPLAN_ARCHIVE" } },
+          ],
         },
       },
     },
     orderBy: { sortOrder: "asc" },
   });
 
-  response.json({ days: schedule, weekEnd, weekStart });
+  if (!session) {
+    response.json({ days: schedule, weekEnd, weekStart });
+    return;
+  }
+
+  const lessons = schedule.flatMap((day) => day.lessons);
+  const lessonIds = lessons.map((lesson) => lesson.id);
+  const moduleKeys = [...new Set(lessons.map(lessonModuleKey))];
+  const [visits, preferences] = await Promise.all([
+    lessonIds.length
+      ? prisma.lessonVisit.findMany({
+          where: {
+            date: { gte: weekStart, lt: weekEnd },
+            lessonId: { in: lessonIds },
+            userId: session.userId,
+          },
+        })
+      : [],
+    moduleKeys.length
+      ? prisma.lessonModulePreference.findMany({
+          where: {
+            moduleKey: { in: moduleKeys },
+            userId: session.userId,
+          },
+        })
+      : [],
+  ]);
+  const visitKeys = new Set(visits.map((visit) => `${visit.lessonId}:${toDateInput(visit.date)}`));
+  const preferenceByModuleKey = new Map(preferences.map((preference) => [preference.moduleKey, preference]));
+  const days = schedule.map((day) => {
+    const dayDate = dateForScheduleDay(weekStart, day.day);
+    return {
+      ...day,
+      lessons: day.lessons.map((lesson) => {
+        const dateKey = toDateInput(lesson.date ?? dayDate);
+      const moduleKey = lessonModuleKey(lesson);
+      return {
+        ...lesson,
+        isModuleActive: preferenceByModuleKey.get(moduleKey)?.isActive ?? true,
+        isVisited: visitKeys.has(`${lesson.id}:${dateKey}`),
+        moduleKey,
+      };
+      }),
+    };
+  });
+
+  response.json({ days, weekEnd, weekStart });
 });
 
 app.get("/api/schedule/import-options", async (request, response) => {
@@ -1577,6 +1899,38 @@ app.get("/api/schedule/import-options", async (request, response) => {
     typeof request.query.facultyId === "string" ? request.query.facultyId : undefined,
     typeof request.query.semesterId === "string" ? request.query.semesterId : undefined,
   ));
+});
+
+app.post("/api/schedule/import-courses", async (request, response) => {
+  const session = await getSession(request);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  const monthImport = await loadStarPlanMonth({
+    facultyId: String(request.body.facultyId ?? ""),
+    facultyName: String(request.body.facultyName ?? ""),
+    monthStart: parseMonthStart(request.body.monthStart ?? request.body.weekStart),
+    semesterId: String(request.body.semesterId ?? ""),
+    semesterName: String(request.body.semesterName ?? ""),
+    specialization: typeof request.body.specialization === "string" ? request.body.specialization : null,
+    studyGroup: String(request.body.studyGroup ?? ""),
+    userId: session.userId,
+  });
+  const courses = [...new Map(monthImport.lessons.map((lesson) => [lesson.title, lesson])).entries()]
+    .map(([title]) => ({
+      lessonCount: monthImport.lessons.filter((lesson) => lesson.title === title).length,
+      title,
+    }))
+    .sort((first, second) => first.title.localeCompare(second.title, "de"));
+
+  response.json({
+    courses,
+    monthEnd: monthImport.monthEnd,
+    monthStart: monthImport.monthStart,
+  });
 });
 
 app.post("/api/schedule/import", async (request, response) => {
@@ -1587,19 +1941,59 @@ app.post("/api/schedule/import", async (request, response) => {
     return;
   }
 
-  const weekStart = parseWeekStart(request.body.weekStart);
-  const count = await importStarPlanSchedule({
+  const monthStart = parseMonthStart(request.body.monthStart ?? request.body.weekStart);
+  const result = await importStarPlanSchedule({
     facultyId: String(request.body.facultyId ?? ""),
     facultyName: String(request.body.facultyName ?? ""),
+    monthStart,
     semesterId: String(request.body.semesterId ?? ""),
     semesterName: String(request.body.semesterName ?? ""),
     specialization: typeof request.body.specialization === "string" ? request.body.specialization : null,
     studyGroup: String(request.body.studyGroup ?? ""),
     userId: session.userId,
-    weekStart,
+    replaceMonth: true,
   });
 
-  response.json({ count, weekStart });
+  response.json({
+    count: result.lessons.length,
+    lessons: result.lessons,
+    monthEnd: result.monthEnd,
+    monthStart: result.monthStart,
+  });
+});
+
+app.post("/api/schedule/import-course", async (request, response) => {
+  const session = await getSession(request);
+  const courseTitle = typeof request.body.courseTitle === "string" ? request.body.courseTitle.trim() : "";
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (!courseTitle) {
+    response.status(400).json({ error: "Course title is required." });
+    return;
+  }
+
+  const result = await importStarPlanSchedule({
+    courseTitle,
+    facultyId: String(request.body.facultyId ?? ""),
+    facultyName: String(request.body.facultyName ?? ""),
+    monthStart: parseMonthStart(request.body.monthStart ?? request.body.weekStart),
+    semesterId: String(request.body.semesterId ?? ""),
+    semesterName: String(request.body.semesterName ?? ""),
+    specialization: typeof request.body.specialization === "string" ? request.body.specialization : null,
+    studyGroup: String(request.body.studyGroup ?? ""),
+    userId: session.userId,
+  });
+
+  response.json({
+    count: result.lessons.length,
+    lessons: result.lessons,
+    monthEnd: result.monthEnd,
+    monthStart: result.monthStart,
+  });
 });
 
 app.post("/api/schedule/lessons", async (request, response) => {
@@ -1659,6 +2053,147 @@ app.post("/api/schedule/lessons", async (request, response) => {
   });
 
   response.status(201).json(lesson);
+});
+
+app.patch("/api/schedule/lessons/:id", async (request, response) => {
+  const session = await getSession(request);
+  const id = Number(request.params.id);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (Number.isNaN(id)) {
+    response.status(400).json({ error: "Invalid lesson id." });
+    return;
+  }
+
+  const existingLesson = await prisma.lesson.findFirst({
+    where: {
+      id,
+      ownerId: session.userId,
+      source: { not: "STARPLAN" },
+    },
+  });
+
+  if (!existingLesson) {
+    response.status(404).json({ error: "Lesson not found." });
+    return;
+  }
+
+  const day = await getOrCreateScheduleDay(typeof request.body.day === "string" ? request.body.day : "Allgemein");
+  const lesson = await prisma.lesson.update({
+    data: lessonData(request.body, day.id),
+    where: { id },
+  });
+
+  response.json(lesson);
+});
+
+app.delete("/api/schedule/lessons/:id", async (request, response) => {
+  const session = await getSession(request);
+  const id = Number(request.params.id);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (Number.isNaN(id)) {
+    response.status(400).json({ error: "Invalid lesson id." });
+    return;
+  }
+
+  const existingLesson = await prisma.lesson.findFirst({
+    where: {
+      id,
+      ownerId: session.userId,
+      source: { not: "STARPLAN" },
+    },
+  });
+
+  if (!existingLesson) {
+    response.status(404).json({ error: "Lesson not found." });
+    return;
+  }
+
+  await prisma.lesson.delete({ where: { id } });
+  response.status(204).send();
+});
+
+app.post("/api/schedule/lessons/:id/visit", async (request, response) => {
+  const session = await getSession(request);
+  const id = Number(request.params.id);
+  const date = typeof request.body.date === "string" ? parseDateInput(request.body.date) : new Date("");
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (Number.isNaN(id) || Number.isNaN(date.getTime())) {
+    response.status(400).json({ error: "Lesson id and date are required." });
+    return;
+  }
+
+  const existingVisit = await prisma.lessonVisit.findUnique({
+    where: {
+      userId_lessonId_date: {
+        date,
+        lessonId: id,
+        userId: session.userId,
+      },
+    },
+  });
+
+  if (existingVisit) {
+    await prisma.lessonVisit.delete({ where: { id: existingVisit.id } });
+    response.json({ isVisited: false });
+    return;
+  }
+
+  await prisma.lessonVisit.create({
+    data: {
+      date,
+      lessonId: id,
+      userId: session.userId,
+    },
+  });
+  response.json({ isVisited: true });
+});
+
+app.patch("/api/schedule/module-preferences", async (request, response) => {
+  const session = await getSession(request);
+  const moduleKey = typeof request.body.moduleKey === "string" ? request.body.moduleKey.trim() : "";
+  const isActive = request.body.isActive === true;
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  if (!moduleKey) {
+    response.status(400).json({ error: "Module key is required." });
+    return;
+  }
+
+  const preference = await prisma.lessonModulePreference.upsert({
+    create: {
+      isActive,
+      moduleKey,
+      userId: session.userId,
+    },
+    update: { isActive },
+    where: {
+      userId_moduleKey: {
+        moduleKey,
+        userId: session.userId,
+      },
+    },
+  });
+
+  response.json(preference);
 });
 
 app.get("/api/schedule/invitations", async (request, response) => {

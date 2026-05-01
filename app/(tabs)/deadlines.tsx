@@ -3,8 +3,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SwipeableTabView } from '@/components/swipeable-tab-view';
+import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { getBackendUrl } from '@/constants/api';
+import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
+import { useSync } from '@/contexts/sync-context';
+import { decryptPayloadWithPrivateKeys, encryptPayloadForPublicKeys, getPrivateKeys, publicKeyJsonsFromValue } from '@/lib/client-crypto';
 
 type Subtask = {
   completedAt: string | null;
@@ -20,7 +25,21 @@ type Todo = {
   id: number;
   title: string;
   subtasks: Subtask[];
+  syncState?: 'pending' | 'synced';
 };
+
+type StudyInfo = {
+  category: string;
+  content: string;
+  encryptedKey?: string | null;
+  encryptedPayload?: string | null;
+  encryptionIv?: string | null;
+  id: number;
+  ownerId?: number | null;
+  title: string;
+};
+
+const emptyNoteForm = { category: 'Notiz', content: '', title: '' };
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString('de-DE', {
@@ -37,9 +56,16 @@ function isTodoDone(todo: Todo) {
 }
 
 export default function DeadlinesScreen() {
-  const { token } = useAuth();
+  const styles = useThemedStyles(baseStyles);
+  const { token, user } = useAuth();
+  const { enqueueCreate, pendingItems, syncVersion } = useSync();
   const backendUrl = useMemo(() => getBackendUrl(), []);
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [notes, setNotes] = useState<StudyInfo[]>([]);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [noteFormOpen, setNoteFormOpen] = useState(false);
+  const [noteForm, setNoteForm] = useState(emptyNoteForm);
+  const [noteError, setNoteError] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [subtaskDrafts, setSubtaskDrafts] = useState(['']);
@@ -62,12 +88,57 @@ export default function DeadlinesScreen() {
       return;
     }
 
-    setTodos((await response.json()) as Todo[]);
+    setTodos(((await response.json()) as Todo[]).map((todo) => ({ ...todo, syncState: 'synced' })));
   }, [backendUrl, token]);
+
+  const loadNotes = useCallback(async () => {
+    const response = await fetch(`${backendUrl}/api/study-info`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+
+    if (!response.ok) {
+      setNoteError('Notizen konnten nicht geladen werden.');
+      return;
+    }
+
+    const data = (await response.json()) as { spo: StudyInfo[] };
+    const privateKeys = user?.email ? await getPrivateKeys(user.email) : [];
+    const decryptedNotes = await Promise.all(data.spo.map(async (item) => {
+      if (privateKeys.length === 0 || !item.encryptedPayload || !item.encryptedKey || !item.encryptionIv) {
+        return item;
+      }
+
+      try {
+        const decrypted = await decryptPayloadWithPrivateKeys<{ content?: string; title?: string }>(privateKeys, {
+          encryptedKey: item.encryptedKey,
+          encryptedPayload: item.encryptedPayload,
+          encryptionIv: item.encryptionIv,
+        });
+        return {
+          ...item,
+          content: decrypted.content ?? item.content,
+          title: decrypted.title ?? item.title,
+        };
+      } catch {
+        return {
+          ...item,
+          content: 'Private Key fehlt oder passt nicht zu dieser Notiz.',
+          title: 'Verschluesselte Notiz',
+        };
+      }
+    }));
+
+    setNoteError('');
+    setNotes(decryptedNotes);
+  }, [backendUrl, token, user?.email]);
 
   useEffect(() => {
     loadTodos();
-  }, [loadTodos]);
+  }, [loadTodos, syncVersion]);
+
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
 
   const openTodos = useMemo(() => todos.filter((todo) => !isTodoDone(todo)), [todos]);
   const completedTodos = useMemo(
@@ -92,11 +163,93 @@ export default function DeadlinesScreen() {
       .map((draft) => draft.trim())
       .filter(Boolean);
 
-    const response = await fetch(`${backendUrl}/api/todos`, {
-      body: JSON.stringify({
+    const body = {
+      description,
+      subtasks,
+      title: cleanTitle,
+    };
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
+
+    try {
+      const response = await fetch(`${backendUrl}/api/todos`, {
+        body: JSON.stringify(body),
+        headers,
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        setError('To-Do konnte nicht gespeichert werden.');
+        return;
+      }
+    } catch {
+      const createdAt = new Date().toISOString();
+      const localTodo: Todo = {
+        completedAt: null,
+        createdAt,
         description,
-        subtasks,
+        id: -Date.now(),
+        subtasks: subtasks.map((subtask, index) => ({
+          completedAt: null,
+          createdAt,
+          id: -(Date.now() + index + 1),
+          title: subtask,
+        })),
+        syncState: 'pending',
         title: cleanTitle,
+      };
+
+      await enqueueCreate({
+        body: JSON.stringify(body),
+        headers: Object.entries(headers),
+        kind: 'todo',
+        localData: localTodo,
+        url: `${backendUrl}/api/todos`,
+      });
+      setTodos((current) => [localTodo, ...current]);
+    }
+
+    setError('');
+    setTitle('');
+    setDescription('');
+    setSubtaskDrafts(['']);
+    setFormOpen(false);
+    await loadTodos().catch(() => undefined);
+  }
+
+  async function addNote() {
+    setNoteError('');
+
+    if (!token) {
+      setNoteError('Melde dich an, um Notizen zu speichern.');
+      return;
+    }
+
+    if (!noteForm.title.trim() || !noteForm.content.trim()) {
+      setNoteError('Titel und Inhalt sind erforderlich.');
+      return;
+    }
+
+    const publicKeys = publicKeyJsonsFromValue(user?.publicKeyJson);
+
+    if (publicKeys.length === 0) {
+      setNoteError('Dein Account hat noch keinen Public Key.');
+      return;
+    }
+
+    const encrypted = await encryptPayloadForPublicKeys(publicKeys, {
+      content: noteForm.content,
+      title: noteForm.title,
+    });
+
+    const response = await fetch(`${backendUrl}/api/study-info`, {
+      body: JSON.stringify({
+        ...noteForm,
+        ...encrypted,
+        content: 'Verschluesselte Notiz',
+        title: 'Verschluesselte Notiz',
       }),
       headers: {
         Authorization: `Bearer ${token}`,
@@ -106,15 +259,13 @@ export default function DeadlinesScreen() {
     });
 
     if (!response.ok) {
-      setError('To-Do konnte nicht gespeichert werden.');
+      setNoteError('Notiz konnte nicht gespeichert werden.');
       return;
     }
 
-    setTitle('');
-    setDescription('');
-    setSubtaskDrafts(['']);
-    setFormOpen(false);
-    await loadTodos();
+    setNoteForm(emptyNoteForm);
+    setNoteFormOpen(false);
+    await loadNotes();
   }
 
   async function completeTodo(todoId: number) {
@@ -174,11 +325,57 @@ export default function DeadlinesScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <SwipeableTabView>
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.kicker}>To-Do</Text>
           <Text style={styles.title}>Aufgaben</Text>
-          <Text style={styles.subtitle}>Offene To-Dos mit Unteraufgaben abhaken und erledigte Aufgaben im Verlauf behalten.</Text>
+          <Text style={styles.subtitle}>Notizen und offene To-Dos an einem Ort verwalten.</Text>
+          <SyncStatusBadge />
+        </View>
+
+        <View style={styles.notesPanel}>
+          <Pressable style={styles.addHeader} onPress={() => setNotesOpen((current) => !current)}>
+            <View style={styles.headerTextBlock}>
+              <Text style={styles.addTitle}>Notizen</Text>
+              <Text style={styles.addHint}>{notes.length ? `${notes.length} gespeicherte Notiz${notes.length === 1 ? '' : 'en'}` : 'Notizen oberhalb der To-Dos aufklappen.'}</Text>
+            </View>
+            <MaterialIcons name={notesOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={28} color="#00684F" style={styles.chevronIcon} />
+          </Pressable>
+
+          {notesOpen ? (
+            <View style={styles.notesContent}>
+              {noteError ? <Text style={styles.error}>{noteError}</Text> : null}
+              {notes.length === 0 ? <Text style={styles.empty}>Keine Notizen vorhanden.</Text> : null}
+              {notes.map((note) => (
+                <View key={note.id} style={styles.noteCard}>
+                  <View style={styles.noteCardHeader}>
+                    <Text style={styles.noteCategory}>{note.category}</Text>
+                    {note.ownerId === user?.id ? <Text style={styles.noteBadge}>Persoenlich</Text> : null}
+                  </View>
+                  <Text style={styles.noteTitle}>{note.title}</Text>
+                  <Text style={styles.noteText}>{note.content}</Text>
+                </View>
+              ))}
+
+              <Pressable style={styles.secondaryButton} onPress={() => setNoteFormOpen((current) => !current)}>
+                <MaterialIcons name={noteFormOpen ? 'keyboard-arrow-up' : 'add'} size={21} color="#00684F" style={styles.chevronIconSmall} />
+                <Text style={styles.secondaryButtonText}>Notiz hinzufuegen</Text>
+              </Pressable>
+
+              {noteFormOpen ? (
+                <View style={styles.form}>
+                  <TextInput placeholder="Kategorie" placeholderTextColor="#98A2B3" style={styles.input} value={noteForm.category} onChangeText={(category) => setNoteForm((current) => ({ ...current, category }))} />
+                  <TextInput placeholder="Titel" placeholderTextColor="#98A2B3" style={styles.input} value={noteForm.title} onChangeText={(nextTitle) => setNoteForm((current) => ({ ...current, title: nextTitle }))} />
+                  <TextInput multiline placeholder="Inhalt" placeholderTextColor="#98A2B3" style={[styles.input, styles.textArea]} value={noteForm.content} onChangeText={(content) => setNoteForm((current) => ({ ...current, content }))} />
+                  <Pressable style={styles.button} onPress={addNote}>
+                    <MaterialIcons name="note-add" size={22} color="#FFFFFF" />
+                    <Text style={styles.buttonText}>Notiz speichern</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -190,10 +387,13 @@ export default function DeadlinesScreen() {
 
         <View style={styles.todoList}>
           {openTodos.length === 0 ? <Text style={styles.empty}>Keine offenen To-Dos vorhanden.</Text> : null}
-          {openTodos.map((todo) => (
+          {[...pendingItems.filter((item) => item.kind === 'todo').map((item) => item.localData as Todo), ...openTodos]
+            .filter((todo, index, allTodos) => allTodos.findIndex((candidate) => candidate.id === todo.id) === index)
+            .map((todo) => (
             <View key={todo.id} style={styles.todoCard}>
               <View style={styles.todoTopRow}>
-                <Pressable style={styles.checkbox} onPress={() => completeTodo(todo.id)}>
+                <View style={[styles.syncDot, todo.syncState === 'pending' ? styles.syncDotPending : styles.syncDotDone]} />
+                <Pressable disabled={todo.syncState === 'pending'} style={[styles.checkbox, todo.syncState === 'pending' && styles.disabledAction]} onPress={() => completeTodo(todo.id)}>
                   <MaterialIcons name="check" size={18} color="#FFFFFF" />
                 </Pressable>
                 <Pressable style={styles.todoTitleBlock} onPress={() => toggleExpanded(todo.id)}>
@@ -201,7 +401,7 @@ export default function DeadlinesScreen() {
                   <Text style={styles.todoMeta}>Erstellt: {formatDateTime(todo.createdAt)}</Text>
                 </Pressable>
                 <Pressable style={styles.expandButton} onPress={() => toggleExpanded(todo.id)}>
-                  <MaterialIcons name={expandedIds.has(todo.id) ? 'expand-less' : 'expand-more'} size={26} color="#2F80ED" />
+                  <MaterialIcons name={expandedIds.has(todo.id) ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={26} color="#00684F" style={styles.chevronIcon} />
                 </Pressable>
               </View>
 
@@ -210,7 +410,7 @@ export default function DeadlinesScreen() {
                   {todo.description ? <Text style={styles.todoDescription}>{todo.description}</Text> : null}
                   {todo.subtasks.length === 0 ? <Text style={styles.empty}>Keine Unteraufgaben.</Text> : null}
                   {todo.subtasks.map((subtask) => (
-                    <Pressable key={subtask.id} style={styles.subtaskRow} onPress={() => toggleSubtask(todo.id, subtask.id)}>
+                    <Pressable disabled={todo.syncState === 'pending'} key={subtask.id} style={[styles.subtaskRow, todo.syncState === 'pending' && styles.disabledAction]} onPress={() => toggleSubtask(todo.id, subtask.id)}>
                       <View style={[styles.subtaskCheckbox, Boolean(subtask.completedAt) && styles.subtaskCheckboxDone]}>
                         {subtask.completedAt ? <MaterialIcons name="check" size={15} color="#FFFFFF" /> : null}
                       </View>
@@ -232,6 +432,7 @@ export default function DeadlinesScreen() {
             {completedTodos.length === 0 ? <Text style={styles.empty}>Noch keine erledigten To-Dos.</Text> : null}
             {completedTodos.map((todo) => (
               <View key={todo.id} style={styles.historyCard}>
+                <View style={[styles.syncDot, styles.syncDotDone]} />
                 <Text style={styles.todoTitle}>{todo.title}</Text>
                 <Text style={styles.todoMeta}>Erstellt: {formatDateTime(todo.createdAt)}</Text>
                 {todo.completedAt ? <Text style={styles.todoMeta}>Erledigt: {formatDateTime(todo.completedAt)}</Text> : null}
@@ -252,11 +453,11 @@ export default function DeadlinesScreen() {
 
         <View style={styles.addPanel}>
           <Pressable style={styles.addHeader} onPress={() => setFormOpen((current) => !current)}>
-            <View>
+            <View style={styles.headerTextBlock}>
               <Text style={styles.addTitle}>To-Do hinzufuegen</Text>
               <Text style={styles.addHint}>Name, Beschreibung und beliebig viele Unteraufgaben erfassen.</Text>
             </View>
-            <MaterialIcons name={formOpen ? 'expand-less' : 'expand-more'} size={28} color="#2F80ED" />
+            <MaterialIcons name={formOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={28} color="#00684F" style={styles.chevronIcon} />
           </Pressable>
 
           {formOpen ? (
@@ -289,7 +490,7 @@ export default function DeadlinesScreen() {
                 </View>
               ))}
               <Pressable style={styles.secondaryButton} onPress={() => setSubtaskDrafts((current) => [...current, ''])}>
-                <MaterialIcons name="add" size={21} color="#2F80ED" />
+                <MaterialIcons name="add" size={21} color="#00684F" />
                 <Text style={styles.secondaryButtonText}>Unteraufgabe</Text>
               </Pressable>
               <Pressable style={styles.button} onPress={addTodo}>
@@ -299,12 +500,13 @@ export default function DeadlinesScreen() {
             </View>
           ) : null}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </SwipeableTabView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F5F7FB' },
   container: { padding: 20, paddingBottom: 36 },
   header: { marginBottom: 20 },
@@ -313,13 +515,17 @@ const styles = StyleSheet.create({
   subtitle: { color: '#667085', fontSize: 15, lineHeight: 22, marginTop: 8 },
   sectionHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   sectionTitle: { color: '#101828', fontSize: 20, fontWeight: '800' },
-  sectionCount: { color: '#2F80ED', fontSize: 15, fontWeight: '800' },
+  sectionCount: { color: '#00684F', fontSize: 15, fontWeight: '800' },
   error: { color: '#B42318', fontSize: 13, fontWeight: '800', marginBottom: 12 },
   todoList: { gap: 10 },
   empty: { color: '#667085', fontSize: 14, lineHeight: 20 },
   todoCard: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, padding: 14 },
   todoTopRow: { alignItems: 'center', flexDirection: 'row', gap: 12 },
   checkbox: { alignItems: 'center', backgroundColor: '#D0D5DD', borderRadius: 8, height: 32, justifyContent: 'center', width: 32 },
+  disabledAction: { opacity: 0.5 },
+  syncDot: { borderRadius: 5, height: 10, marginTop: 3, width: 10 },
+  syncDotDone: { backgroundColor: '#12B76A' },
+  syncDotPending: { backgroundColor: '#D92D20' },
   todoTitleBlock: { flex: 1 },
   todoTitle: { color: '#101828', fontSize: 16, fontWeight: '800' },
   todoMeta: { color: '#667085', fontSize: 12, lineHeight: 18, marginTop: 3 },
@@ -335,8 +541,19 @@ const styles = StyleSheet.create({
   historyCard: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, padding: 14 },
   historySubtasks: { gap: 4, marginTop: 10 },
   historySubtask: { color: '#667085', fontSize: 12, lineHeight: 18 },
+  notesPanel: { marginBottom: 18 },
+  notesContent: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, gap: 10, padding: 12 },
+  noteCard: { backgroundColor: '#F9FAFB', borderColor: '#EAECF0', borderRadius: 8, borderWidth: 1, padding: 12 },
+  noteCardHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
+  noteCategory: { color: '#00684F', fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
+  noteBadge: { color: '#047857', fontSize: 12, fontWeight: '800' },
+  noteTitle: { color: '#101828', fontSize: 16, fontWeight: '800', marginTop: 7 },
+  noteText: { color: '#344054', fontSize: 14, lineHeight: 20, marginTop: 5 },
   addPanel: { marginTop: 18 },
   addHeader: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, padding: 14 },
+  headerTextBlock: { flex: 1, paddingRight: 10 },
+  chevronIcon: { flexShrink: 0, textAlign: 'center', width: 28 },
+  chevronIconSmall: { flexShrink: 0, textAlign: 'center', width: 22 },
   addTitle: { color: '#101828', fontSize: 17, fontWeight: '800' },
   addHint: { color: '#667085', fontSize: 13, lineHeight: 19, marginTop: 3, paddingRight: 8 },
   form: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, gap: 10, padding: 14 },
@@ -347,8 +564,8 @@ const styles = StyleSheet.create({
   subtaskInput: { flex: 1 },
   removeButton: { alignItems: 'center', backgroundColor: '#FEF3F2', borderColor: '#FECDCA', borderRadius: 8, borderWidth: 1, height: 46, justifyContent: 'center', width: 46 },
   removeButtonDisabled: { opacity: 0.4 },
-  secondaryButton: { alignItems: 'center', backgroundColor: '#EEF4FF', borderColor: '#B2CCFF', borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', minHeight: 44 },
-  secondaryButtonText: { color: '#2F80ED', fontSize: 14, fontWeight: '800' },
-  button: { alignItems: 'center', backgroundColor: '#2F80ED', borderRadius: 8, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 48 },
+  secondaryButton: { alignItems: 'center', backgroundColor: '#E7F4EF', borderColor: '#93D3BA', borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 7, justifyContent: 'center', minHeight: 44 },
+  secondaryButtonText: { color: '#00684F', fontSize: 14, fontWeight: '800' },
+  button: { alignItems: 'center', backgroundColor: '#00684F', borderRadius: 8, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 48 },
   buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 });

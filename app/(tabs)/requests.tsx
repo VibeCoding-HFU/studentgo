@@ -3,10 +3,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BackendStatusBadge } from '@/components/backend-status-badge';
+import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { getBackendUrl } from '@/constants/api';
+import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
-import { decryptPayload, getPrivateKey } from '@/lib/client-crypto';
+import { decryptPayloadWithPrivateKeys, getPrivateKeys } from '@/lib/client-crypto';
 
 type Invitation = {
   id: number;
@@ -51,6 +52,7 @@ function formatDate(value?: string | null) {
 }
 
 export default function RequestsScreen() {
+  const styles = useThemedStyles(baseStyles);
   const { token, user } = useAuth();
   const backendUrl = useMemo(() => getBackendUrl(), []);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -72,14 +74,14 @@ export default function RequestsScreen() {
     }
 
     const data = (await response.json()) as Invitation[];
-    const privateKey = user?.email ? await getPrivateKey(user.email) : null;
+    const privateKeys = user?.email ? await getPrivateKeys(user.email) : [];
     const decrypted = await Promise.all(data.map(async (invitation) => {
-      if (!privateKey || !invitation.encryptedPayload || !invitation.encryptedKey || !invitation.encryptionIv) {
+      if (privateKeys.length === 0 || !invitation.encryptedPayload || !invitation.encryptedKey || !invitation.encryptionIv) {
         return invitation;
       }
 
       try {
-        const payload = await decryptPayload<{ description?: string; title?: string }>(privateKey, {
+        const payload = await decryptPayloadWithPrivateKeys<{ description?: string; title?: string }>(privateKeys, {
           encryptedKey: invitation.encryptedKey,
           encryptedPayload: invitation.encryptedPayload,
           encryptionIv: invitation.encryptionIv,
@@ -129,7 +131,7 @@ export default function RequestsScreen() {
           <Text style={styles.kicker}>StudentGo</Text>
           <Text style={styles.title}>Anfragen</Text>
           <Text style={styles.subtitle}>Einladungen zu persoenlichen Terminen annehmen oder ablehnen.</Text>
-          <BackendStatusBadge />
+          <SyncStatusBadge />
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -168,11 +170,11 @@ export default function RequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F5F7FB' },
   container: { padding: 20, paddingBottom: 36 },
   header: { marginBottom: 20 },
-  kicker: { color: '#2F80ED', fontSize: 14, fontWeight: '800', marginBottom: 6, textTransform: 'uppercase' },
+  kicker: { color: '#00684F', fontSize: 14, fontWeight: '800', marginBottom: 6, textTransform: 'uppercase' },
   title: { color: '#101828', fontSize: 28, fontWeight: '800', lineHeight: 34 },
   subtitle: { color: '#667085', fontSize: 15, lineHeight: 22, marginBottom: 14, marginTop: 8 },
   error: { color: '#B42318', fontSize: 13, fontWeight: '800', marginBottom: 12 },

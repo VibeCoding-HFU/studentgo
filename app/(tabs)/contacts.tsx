@@ -3,8 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SwipeableTabView } from '@/components/swipeable-tab-view';
+import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { getBackendUrl } from '@/constants/api';
+import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
+import { useSync } from '@/contexts/sync-context';
 
 type Contact = {
   email: string;
@@ -14,12 +18,15 @@ type Contact = {
   phone?: string | null;
   role: string;
   room?: string | null;
+  syncState?: 'pending' | 'synced';
 };
 
 const emptyForm = { email: '', name: '', phone: '', role: '', room: '' };
 
 export default function ContactsScreen() {
+  const styles = useThemedStyles(baseStyles);
   const { token, user } = useAuth();
+  const { enqueueCreate, pendingItems, syncVersion } = useSync();
   const backendUrl = useMemo(() => getBackendUrl(), []);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [form, setForm] = useState(emptyForm);
@@ -33,27 +40,34 @@ export default function ContactsScreen() {
     });
 
     if (response.ok) {
-      setContacts((await response.json()) as Contact[]);
+      setContacts(((await response.json()) as Contact[]).map((contact) => ({ ...contact, syncState: 'synced' })));
     }
   }, [backendUrl, token]);
 
   useEffect(() => {
     loadContacts();
-  }, [loadContacts]);
+  }, [loadContacts, syncVersion]);
+
+  const pendingContacts = useMemo(
+    () => pendingItems.filter((item) => item.kind === 'contact').map((item) => item.localData as Contact),
+    [pendingItems],
+  );
 
   const filteredContacts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
+    const allContacts = [...pendingContacts, ...contacts]
+      .filter((contact, index, candidates) => candidates.findIndex((candidate) => candidate.id === contact.id) === index);
 
     if (!normalizedQuery) {
-      return contacts;
+      return allContacts;
     }
 
-    return contacts.filter((contact) =>
+    return allContacts.filter((contact) =>
       [contact.name, contact.role, contact.email, contact.room ?? ''].some((value) =>
         value.toLowerCase().includes(normalizedQuery),
       ),
     );
-  }, [contacts, query]);
+  }, [contacts, pendingContacts, query]);
 
   async function addContact() {
     setError('');
@@ -63,31 +77,54 @@ export default function ContactsScreen() {
       return;
     }
 
-    const response = await fetch(`${backendUrl}/api/contacts`, {
-      body: JSON.stringify(form),
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      method: 'POST',
-    });
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
 
-    if (!response.ok) {
-      setError('Kontakt konnte nicht gespeichert werden.');
-      return;
+    try {
+      const response = await fetch(`${backendUrl}/api/contacts`, {
+        body: JSON.stringify(form),
+        headers,
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        setError('Kontakt konnte nicht gespeichert werden.');
+        return;
+      }
+    } catch {
+      const localContact: Contact = {
+        ...form,
+        id: -Date.now(),
+        ownerId: user?.id,
+        syncState: 'pending',
+      };
+
+      await enqueueCreate({
+        body: JSON.stringify(form),
+        headers: Object.entries(headers),
+        kind: 'contact',
+        localData: localContact,
+        url: `${backendUrl}/api/contacts`,
+      });
+      setContacts((current) => [localContact, ...current]);
     }
 
     setForm(emptyForm);
-    await loadContacts();
+    setFormOpen(false);
+    await loadContacts().catch(() => undefined);
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <SwipeableTabView>
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.kicker}>Kontakt</Text>
           <Text style={styles.title}>Kontakte</Text>
           <Text style={styles.subtitle}>Oeffentliche Kontakte und deine persoenlich markierten Eintraege.</Text>
+          <SyncStatusBadge />
         </View>
 
         <View style={styles.searchBox}>
@@ -104,6 +141,7 @@ export default function ContactsScreen() {
               </View>
               <View style={styles.contactContent}>
                 <View style={styles.cardHeader}>
+                  <View style={[styles.syncDot, contact.syncState === 'pending' ? styles.syncDotPending : styles.syncDotDone]} />
                   <Text style={styles.contactName}>{contact.name}</Text>
                   {contact.ownerId === user?.id ? <Text style={styles.personalBadge}>Persoenlich</Text> : null}
                 </View>
@@ -117,11 +155,11 @@ export default function ContactsScreen() {
 
         <View style={styles.addPanel}>
           <Pressable style={styles.addHeader} onPress={() => setFormOpen((current) => !current)}>
-            <View>
+            <View style={styles.headerTextBlock}>
               <Text style={styles.addTitle}>Persoenlichen Kontakt hinzufuegen</Text>
               <Text style={styles.addHint}>Eigene Kontakte bleiben nur fuer deinen Account sichtbar.</Text>
             </View>
-            <MaterialIcons name={formOpen ? 'expand-less' : 'expand-more'} size={28} color="#2F80ED" />
+            <MaterialIcons name={formOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={28} color="#00684F" style={styles.chevronIcon} />
           </Pressable>
 
           {formOpen ? (
@@ -139,12 +177,13 @@ export default function ContactsScreen() {
             </View>
           ) : null}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </SwipeableTabView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F5F7FB' },
   container: { padding: 20, paddingBottom: 36 },
   header: { marginBottom: 20 },
@@ -155,7 +194,7 @@ const styles = StyleSheet.create({
   searchInput: { color: '#101828', flex: 1, fontSize: 15, minHeight: 48 },
   form: { backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, gap: 10, padding: 14 },
   input: { backgroundColor: '#F9FAFB', borderColor: '#D0D5DD', borderRadius: 8, borderWidth: 1, color: '#101828', fontSize: 15, minHeight: 46, paddingHorizontal: 12 },
-  button: { alignItems: 'center', backgroundColor: '#2F80ED', borderRadius: 8, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 48 },
+  button: { alignItems: 'center', backgroundColor: '#00684F', borderRadius: 8, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 48 },
   buttonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   error: { color: '#B42318', fontSize: 13, fontWeight: '700' },
   empty: { color: '#667085', fontSize: 14, lineHeight: 20 },
@@ -166,11 +205,16 @@ const styles = StyleSheet.create({
   contactContent: { flex: 1 },
   cardHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: 8, justifyContent: 'space-between' },
   contactName: { color: '#101828', flex: 1, fontSize: 17, fontWeight: '800' },
+  syncDot: { borderRadius: 5, height: 10, marginTop: 5, width: 10 },
+  syncDotDone: { backgroundColor: '#12B76A' },
+  syncDotPending: { backgroundColor: '#D92D20' },
   personalBadge: { color: '#047857', fontSize: 12, fontWeight: '800' },
   contactRole: { color: '#475467', fontSize: 14, fontWeight: '700', marginTop: 3 },
   contactDetail: { color: '#667085', fontSize: 13, lineHeight: 19, marginTop: 5 },
   addPanel: { marginTop: 4 },
   addHeader: { alignItems: 'center', backgroundColor: '#FFFFFF', borderColor: '#E4E7EC', borderRadius: 8, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10, padding: 14 },
+  headerTextBlock: { flex: 1, paddingRight: 10 },
+  chevronIcon: { flexShrink: 0, textAlign: 'center', width: 28 },
   addTitle: { color: '#101828', fontSize: 17, fontWeight: '800' },
   addHint: { color: '#667085', fontSize: 13, lineHeight: 19, marginTop: 3, paddingRight: 8 },
 });

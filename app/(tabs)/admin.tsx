@@ -3,8 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SwipeableTabView } from '@/components/swipeable-tab-view';
+import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { getBackendUrl } from '@/constants/api';
+import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { Role, useAuth } from '@/contexts/auth-context';
+import { ManagerWorkspace } from './manager';
 
 type Summary = {
   contacts: number;
@@ -53,13 +57,14 @@ function roleLabel(role: Role) {
 }
 
 function RoleComboBox({ value, onChange }: { onChange: (role: Role) => void; value: Role }) {
+  const styles = useThemedStyles(baseStyles);
   const [isOpen, setIsOpen] = useState(false);
 
   return (
     <View style={[styles.comboBox, isOpen && styles.comboBoxOpen]}>
       <Pressable accessibilityRole="combobox" style={styles.comboButton} onPress={() => setIsOpen((current) => !current)}>
         <Text style={styles.comboLabel}>{roleLabel(value)}</Text>
-        <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
+        <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" style={styles.chevronIcon} />
       </Pressable>
       {isOpen ? (
         <View style={styles.comboMenu}>
@@ -107,6 +112,7 @@ async function readError(response: Response) {
 }
 
 export default function AdminScreen() {
+  const styles = useThemedStyles(baseStyles);
   const { isAdminMode, token } = useAuth();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -116,6 +122,7 @@ export default function AdminScreen() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const backendUrl = useMemo(() => getBackendUrl(), []);
 
   const headers = useMemo(
@@ -253,11 +260,13 @@ export default function AdminScreen() {
   if (!isAdminMode) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.locked}>
-          <MaterialIcons name="lock" size={34} color="#B42318" />
-          <Text style={styles.lockedTitle}>Admin-Zugang erforderlich</Text>
-          <Text style={styles.lockedText}>Melde dich im Account-Tab als Admin an, um Accounts und Freigaben zu verwalten.</Text>
-        </View>
+        <SwipeableTabView>
+          <View style={styles.locked}>
+            <MaterialIcons name="lock" size={34} color="#B42318" />
+            <Text style={styles.lockedTitle}>Admin-Zugang erforderlich</Text>
+            <Text style={styles.lockedText}>Melde dich im Account-Tab als Admin an, um Accounts und Freigaben zu verwalten.</Text>
+          </View>
+        </SwipeableTabView>
       </SafeAreaView>
     );
   }
@@ -275,119 +284,136 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <SwipeableTabView>
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.kicker}>Admin</Text>
-          <Text style={styles.title}>Accounts und Freigaben</Text>
-          <Text style={styles.subtitle}>Berechtigungen steuern, Accounts bearbeiten und Verwalter-Anfragen pruefen.</Text>
+          <Text style={styles.title}>Verwalten</Text>
+          <Text style={styles.subtitle}>Eintraege vorbereiten und erweiterte Admin-Einstellungen bei Bedarf oeffnen.</Text>
+          <SyncStatusBadge />
         </View>
-
-        <Pressable disabled={isLoading} style={styles.refreshButton} onPress={loadAdminData}>
-          <MaterialIcons name="refresh" size={22} color="#FFFFFF" />
-          <Text style={styles.refreshText}>{isLoading ? 'Wird geladen' : 'Aktualisieren'}</Text>
-        </Pressable>
 
         {message ? <Text style={styles.success}>{message}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <View style={styles.summaryGrid}>
-          {cards.map(([label, value, icon]) => (
-            <View key={label as string} style={styles.summaryCard}>
-              <MaterialIcons name={icon as keyof typeof MaterialIcons.glyphMap} size={24} color="#2F80ED" />
-              <Text style={styles.summaryValue}>{value}</Text>
-              <Text style={styles.summaryLabel}>{label}</Text>
-            </View>
-          ))}
-        </View>
+        <ManagerWorkspace embedded />
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{selectedUserId ? 'Account bearbeiten' : 'Account anlegen'}</Text>
-          {selectedUserId ? (
-            <Pressable onPress={resetUserForm}>
-              <Text style={styles.linkText}>Neu</Text>
+        <Pressable style={styles.advancedToggle} onPress={() => setAdvancedOpen((current) => !current)}>
+          <View style={styles.headerTextBlock}>
+            <Text style={styles.advancedTitle}>Erweitert</Text>
+            <Text style={styles.advancedMeta}>Dashboard, Freigaben und Accounts</Text>
+          </View>
+          <MaterialIcons name={advancedOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={26} color="#475467" style={styles.chevronIcon} />
+        </Pressable>
+
+        {advancedOpen ? (
+          <>
+            <Pressable disabled={isLoading} style={styles.refreshButton} onPress={loadAdminData}>
+              <MaterialIcons name="refresh" size={22} color="#FFFFFF" />
+              <Text style={styles.refreshText}>{isLoading ? 'Wird geladen' : 'Aktualisieren'}</Text>
             </Pressable>
-          ) : null}
-        </View>
 
-        <View style={styles.form}>
-          <TextInput placeholder="Name" placeholderTextColor="#98A2B3" style={styles.input} value={userForm.name} onChangeText={(name) => setUserForm((current) => ({ ...current, name }))} />
-          <TextInput autoCapitalize="none" keyboardType="email-address" placeholder="E-Mail" placeholderTextColor="#98A2B3" style={styles.input} value={userForm.email} onChangeText={(email) => setUserForm((current) => ({ ...current, email }))} />
-          <TextInput placeholder={selectedUserId ? 'Neues Passwort optional' : 'Passwort'} placeholderTextColor="#98A2B3" secureTextEntry style={styles.input} value={userForm.password} onChangeText={(password) => setUserForm((current) => ({ ...current, password }))} />
-
-          <RoleComboBox value={userForm.role} onChange={(role) => setUserForm((current) => ({ ...current, role }))} />
-
-          <Pressable disabled={isLoading} style={[styles.button, isLoading && styles.buttonDisabled]} onPress={submitUser}>
-            <MaterialIcons name={selectedUserId ? 'save' : 'person-add'} size={21} color="#FFFFFF" />
-            <Text style={styles.buttonText}>{selectedUserId ? 'Account speichern' : 'Account anlegen'}</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Accounts</Text>
-          <Text style={styles.sectionCount}>{users.length}</Text>
-        </View>
-
-        <View style={styles.userList}>
-          {users.map((account) => (
-            <View key={account.id} style={styles.userCard}>
-              <View style={styles.userIcon}>
-                <MaterialIcons
-                  name={account.role === 'ADMIN' ? 'admin-panel-settings' : account.role === 'MANAGER' ? 'edit-note' : 'person'}
-                  size={22}
-                  color={account.role === 'ADMIN' ? '#B54708' : account.role === 'MANAGER' ? '#0E6F63' : '#2F80ED'}
-                />
-              </View>
-              <View style={styles.userContent}>
-                <Text style={styles.userName}>{account.name}</Text>
-                <Text style={styles.userMeta}>{account.email}</Text>
-                <Text style={styles.userRole}>{roleLabel(account.role)}</Text>
-                <View style={styles.cardActions}>
-                  <Pressable style={styles.smallButton} onPress={() => selectUser(account)}>
-                    <MaterialIcons name="edit" size={18} color="#2F80ED" />
-                    <Text style={styles.smallButtonText}>Bearbeiten</Text>
-                  </Pressable>
-                  <Pressable style={[styles.smallButton, styles.dangerSmallButton]} onPress={() => deleteUser(account.id)}>
-                    <MaterialIcons name="delete" size={18} color="#B42318" />
-                    <Text style={styles.dangerSmallButtonText}>Loeschen</Text>
-                  </Pressable>
+            <View style={styles.summaryGrid}>
+              {cards.map(([label, value, icon]) => (
+                <View key={label as string} style={styles.summaryCard}>
+                  <MaterialIcons name={icon as keyof typeof MaterialIcons.glyphMap} size={24} color="#00684F" />
+                  <Text style={styles.summaryValue}>{value}</Text>
+                  <Text style={styles.summaryLabel}>{label}</Text>
                 </View>
-              </View>
+              ))}
             </View>
-          ))}
-        </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Verwalter-Anfragen</Text>
-          <Text style={styles.sectionCount}>{requests.filter((request) => request.status === 'PENDING').length}</Text>
-        </View>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Verwalter-Anfragen</Text>
+              <Text style={styles.sectionCount}>{requests.filter((request) => request.status === 'PENDING').length}</Text>
+            </View>
 
-        <View style={styles.userList}>
-          {requests.map((request) => (
-            <View key={request.id} style={styles.requestCard}>
-              <Text style={styles.userName}>{requestTitle(request)}</Text>
-              <Text style={styles.userMeta}>Von {request.requestedBy.name} · Status {request.status}</Text>
-              <Text style={styles.payloadText}>{JSON.stringify(request.payload)}</Text>
-              {request.status === 'PENDING' ? (
-                <View style={styles.cardActions}>
-                  <Pressable style={styles.approveButton} onPress={() => reviewRequest(request.id, 'approve')}>
-                    <MaterialIcons name="check" size={18} color="#047857" />
-                    <Text style={styles.approveText}>Annehmen</Text>
-                  </Pressable>
-                  <Pressable style={styles.rejectButton} onPress={() => reviewRequest(request.id, 'reject')}>
-                    <MaterialIcons name="close" size={18} color="#B42318" />
-                    <Text style={styles.rejectText}>Ablehnen</Text>
-                  </Pressable>
+            <View style={styles.userList}>
+              {requests.map((request) => (
+                <View key={request.id} style={styles.requestCard}>
+                  <Text style={styles.userName}>{requestTitle(request)}</Text>
+                  <Text style={styles.userMeta}>Von {request.requestedBy.name} · Status {request.status}</Text>
+                  <Text style={styles.payloadText}>{JSON.stringify(request.payload)}</Text>
+                  {request.status === 'PENDING' ? (
+                    <View style={styles.cardActions}>
+                      <Pressable style={styles.approveButton} onPress={() => reviewRequest(request.id, 'approve')}>
+                        <MaterialIcons name="check" size={18} color="#047857" />
+                        <Text style={styles.approveText}>Annehmen</Text>
+                      </Pressable>
+                      <Pressable style={styles.rejectButton} onPress={() => reviewRequest(request.id, 'reject')}>
+                        <MaterialIcons name="close" size={18} color="#B42318" />
+                        <Text style={styles.rejectText}>Ablehnen</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
                 </View>
+              ))}
+            </View>
+
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{selectedUserId ? 'Account bearbeiten' : 'Account anlegen'}</Text>
+              {selectedUserId ? (
+                <Pressable onPress={resetUserForm}>
+                  <Text style={styles.linkText}>Neu</Text>
+                </Pressable>
               ) : null}
             </View>
-          ))}
-        </View>
-      </ScrollView>
+
+            <View style={styles.form}>
+              <TextInput placeholder="Name" placeholderTextColor="#98A2B3" style={styles.input} value={userForm.name} onChangeText={(name) => setUserForm((current) => ({ ...current, name }))} />
+              <TextInput autoCapitalize="none" keyboardType="email-address" placeholder="E-Mail" placeholderTextColor="#98A2B3" style={styles.input} value={userForm.email} onChangeText={(email) => setUserForm((current) => ({ ...current, email }))} />
+              <TextInput placeholder={selectedUserId ? 'Neues Passwort optional' : 'Passwort'} placeholderTextColor="#98A2B3" secureTextEntry style={styles.input} value={userForm.password} onChangeText={(password) => setUserForm((current) => ({ ...current, password }))} />
+
+              <RoleComboBox value={userForm.role} onChange={(role) => setUserForm((current) => ({ ...current, role }))} />
+
+              <Pressable disabled={isLoading} style={[styles.button, isLoading && styles.buttonDisabled]} onPress={submitUser}>
+                <MaterialIcons name={selectedUserId ? 'save' : 'person-add'} size={21} color="#FFFFFF" />
+                <Text style={styles.buttonText}>{selectedUserId ? 'Account speichern' : 'Account anlegen'}</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Accounts</Text>
+              <Text style={styles.sectionCount}>{users.length}</Text>
+            </View>
+
+            <View style={styles.userList}>
+              {users.map((account) => (
+                <View key={account.id} style={styles.userCard}>
+                  <View style={styles.userIcon}>
+                    <MaterialIcons
+                      name={account.role === 'ADMIN' ? 'admin-panel-settings' : account.role === 'MANAGER' ? 'edit-note' : 'person'}
+                      size={22}
+                      color={account.role === 'ADMIN' ? '#B54708' : account.role === 'MANAGER' ? '#00684F' : '#00684F'}
+                    />
+                  </View>
+                  <View style={styles.userContent}>
+                    <Text style={styles.userName}>{account.name}</Text>
+                    <Text style={styles.userMeta}>{account.email}</Text>
+                    <Text style={styles.userRole}>{roleLabel(account.role)}</Text>
+                    <View style={styles.cardActions}>
+                      <Pressable style={styles.smallButton} onPress={() => selectUser(account)}>
+                        <MaterialIcons name="edit" size={18} color="#00684F" />
+                        <Text style={styles.smallButtonText}>Bearbeiten</Text>
+                      </Pressable>
+                      <Pressable style={[styles.smallButton, styles.dangerSmallButton]} onPress={() => deleteUser(account.id)}>
+                        <MaterialIcons name="delete" size={18} color="#B42318" />
+                        <Text style={styles.dangerSmallButtonText}>Loeschen</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
+        </ScrollView>
+      </SwipeableTabView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#F5F7FB',
@@ -421,7 +447,7 @@ const styles = StyleSheet.create({
   refreshButton: {
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#14213D',
+    backgroundColor: '#004B3A',
     borderRadius: 8,
     flexDirection: 'row',
     gap: 8,
@@ -434,6 +460,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
+  advancedToggle: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E4E7EC',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    minHeight: 58,
+    paddingHorizontal: 14,
+  },
+  advancedTitle: {
+    color: '#101828',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  advancedMeta: {
+    color: '#667085',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  headerTextBlock: { flex: 1, paddingRight: 10 },
+  chevronIcon: { flexShrink: 0, textAlign: 'center', width: 28 },
   success: {
     color: '#047857',
     fontSize: 13,
@@ -487,12 +538,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   sectionCount: {
-    color: '#2F80ED',
+    color: '#00684F',
     fontSize: 15,
     fontWeight: '800',
   },
   linkText: {
-    color: '#2F80ED',
+    color: '#00684F',
     fontSize: 14,
     fontWeight: '800',
   },
@@ -536,6 +587,7 @@ const styles = StyleSheet.create({
   },
   comboLabel: {
     color: '#101828',
+    flex: 1,
     fontSize: 15,
     fontWeight: '800',
   },
@@ -555,7 +607,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   comboOptionActive: {
-    backgroundColor: '#EEF4FF',
+    backgroundColor: '#E7F4EF',
   },
   comboOptionText: {
     color: '#475467',
@@ -563,7 +615,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   comboOptionTextActive: {
-    color: '#2F80ED',
+    color: '#00684F',
   },
   roleRow: {
     flexDirection: 'row',
@@ -580,8 +632,8 @@ const styles = StyleSheet.create({
     minHeight: 42,
   },
   roleButtonActive: {
-    backgroundColor: '#14213D',
-    borderColor: '#14213D',
+    backgroundColor: '#004B3A',
+    borderColor: '#004B3A',
   },
   roleText: {
     color: '#475467',
@@ -593,7 +645,7 @@ const styles = StyleSheet.create({
   },
   button: {
     alignItems: 'center',
-    backgroundColor: '#2F80ED',
+    backgroundColor: '#00684F',
     borderRadius: 8,
     flexDirection: 'row',
     gap: 8,
@@ -658,7 +710,7 @@ const styles = StyleSheet.create({
   },
   smallButton: {
     alignItems: 'center',
-    backgroundColor: '#EEF4FF',
+    backgroundColor: '#E7F4EF',
     borderColor: '#D1E0FF',
     borderRadius: 8,
     borderWidth: 1,
@@ -668,7 +720,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   smallButtonText: {
-    color: '#2F80ED',
+    color: '#00684F',
     fontSize: 13,
     fontWeight: '800',
   },

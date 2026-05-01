@@ -1,6 +1,8 @@
 import { getBackendUrl } from '@/constants/api';
 import { generateAccountKeyPair, savePrivateKey } from '@/lib/client-crypto';
-import { createContext, PropsWithChildren, useContext, useMemo, useState } from 'react';
+import { addPublicKeyToValue } from '@/lib/client-crypto.shared';
+import { getStoredAuthSession, removeAuthSession, saveAuthSession } from '@/lib/auth-session-storage';
+import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
 export type Role = 'USER' | 'MANAGER' | 'ADMIN';
 
@@ -12,7 +14,7 @@ type AuthUser = {
   role: Role;
 };
 
-type AuthSession = {
+export type AuthSession = {
   activeRole: Role;
   token: string;
   user: AuthUser;
@@ -26,7 +28,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   login: (email: string, password: string, loginAs: Role) => Promise<void>;
   logout: () => Promise<void>;
-  register: (name: string, email: string, password: string, role: Role) => Promise<string>;
+  register: (name: string, email: string, password: string, role: Role) => Promise<{ privateKeyJson: string; privateKeySaved: boolean }>;
   session: AuthSession | null;
   token: string | null;
   updatePublicKey: (publicKeyJson: string) => void;
@@ -46,7 +48,26 @@ async function readError(response: Response) {
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<AuthSession | null>(null);
+  const [isSessionLoaded, setIsSessionLoaded] = useState(false);
   const backendUrl = useMemo(() => getBackendUrl(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSession() {
+      const storedSession = await getStoredAuthSession();
+
+      if (!cancelled) {
+        setSession(storedSession);
+        setIsSessionLoaded(true);
+      }
+    }
+
+    loadSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function authenticate(path: string, body: Record<string, unknown>) {
     const response = await fetch(`${backendUrl}${path}`, {
@@ -61,6 +82,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     const nextSession = (await response.json()) as AuthSession;
     setSession(nextSession);
+    await saveAuthSession(nextSession);
   }
 
   async function login(email: string, password: string, loginAs: Role) {
@@ -79,8 +101,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
       throw new Error(await readError(response));
     }
 
-    await savePrivateKey(email, keyPair.privateKeyJson);
-    return keyPair.privateKeyJson;
+    try {
+      await savePrivateKey(email, keyPair.privateKeyJson);
+      return { privateKeyJson: keyPair.privateKeyJson, privateKeySaved: true };
+    } catch {
+      return { privateKeyJson: keyPair.privateKeyJson, privateKeySaved: false };
+    }
   }
 
   async function confirmRegistration(token: string) {
@@ -90,6 +116,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   async function logout() {
     const token = session?.token;
     setSession(null);
+    await removeAuthSession();
 
     if (!token) {
       return;
@@ -102,13 +129,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   function updatePublicKey(publicKeyJson: string) {
-    setSession((current) => current ? {
-      ...current,
-      user: {
-        ...current.user,
-        publicKeyJson,
-      },
-    } : current);
+    setSession((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const nextSession = {
+        ...current,
+        user: {
+          ...current.user,
+          publicKeyJson: addPublicKeyToValue(current.user.publicKeyJson, publicKeyJson),
+        },
+      };
+      saveAuthSession(nextSession).catch(() => undefined);
+      return nextSession;
+    });
   }
 
   const value = useMemo<AuthContextValue>(
@@ -117,7 +152,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       confirmRegistration,
       isAdminMode: session?.activeRole === 'ADMIN',
       isManagerMode: session?.activeRole === 'ADMIN' || session?.activeRole === 'MANAGER',
-      isAuthenticated: Boolean(session),
+      isAuthenticated: Boolean(session) || !isSessionLoaded,
       login,
       logout,
       register,
@@ -126,7 +161,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       updatePublicKey,
       user: session?.user ?? null,
     }),
-    [session],
+    [isSessionLoaded, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

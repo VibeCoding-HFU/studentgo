@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SwipeableTabView } from '@/components/swipeable-tab-view';
+import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { getBackendUrl } from '@/constants/api';
+import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 
 type Entity = 'CONTACT' | 'MEAL' | 'LESSON' | 'STUDY_INFO';
@@ -155,6 +158,7 @@ function ComboBox<T extends Option>({ disabled, label, onChange, options, value 
   options: T[];
   value: T | null;
 }) {
+  const styles = useThemedStyles(baseStyles);
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -162,7 +166,7 @@ function ComboBox<T extends Option>({ disabled, label, onChange, options, value 
       <Text style={styles.comboTitle}>{label}</Text>
       <Pressable accessibilityRole="combobox" disabled={disabled} style={[styles.comboButton, disabled && styles.buttonDisabled]} onPress={() => setIsOpen((current) => !current)}>
         <Text style={styles.comboLabel}>{value?.shortname ?? value?.name ?? 'Auswaehlen'}</Text>
-        <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
+        <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" style={styles.chevronIcon} />
       </Pressable>
       {isOpen && !disabled ? (
         <View style={styles.comboMenu}>
@@ -195,6 +199,7 @@ function ActionComboBox({ value, onChange }: { onChange: (action: Action) => voi
 }
 
 function WeekDatePicker({ value, onChange }: { onChange: (date: string) => void; value: string }) {
+  const styles = useThemedStyles(baseStyles);
   const selectedDate = value ? new Date(`${value}T12:00:00`) : new Date();
   const [pickerWeek, setPickerWeek] = useState(startOfWeek(selectedDate));
   const days = dayNames.map((day, index) => {
@@ -206,11 +211,11 @@ function WeekDatePicker({ value, onChange }: { onChange: (date: string) => void;
     <View style={styles.datePicker}>
       <View style={styles.datePickerHeader}>
         <Pressable style={styles.smallIconButton} onPress={() => setPickerWeek((current) => addDays(current, -7))}>
-          <MaterialIcons name="chevron-left" size={22} color="#2F80ED" />
+          <MaterialIcons name="chevron-left" size={22} color="#00684F" />
         </Pressable>
         <Text style={styles.datePickerTitle}>{formatDisplayDate(pickerWeek)} - {formatDisplayDate(addDays(pickerWeek, 6))}</Text>
         <Pressable style={styles.smallIconButton} onPress={() => setPickerWeek((current) => addDays(current, 7))}>
-          <MaterialIcons name="chevron-right" size={22} color="#2F80ED" />
+          <MaterialIcons name="chevron-right" size={22} color="#00684F" />
         </Pressable>
       </View>
       <View style={styles.dateGrid}>
@@ -241,7 +246,8 @@ function itemMeta(item: Contact | Meal | (ScheduleDay['lessons'][number] & { day
   return item.category;
 }
 
-export default function ManagerScreen() {
+export function ManagerWorkspace({ embedded = false }: { embedded?: boolean }) {
+  const styles = useThemedStyles(baseStyles);
   const { isManagerMode, token } = useAuth();
   const backendUrl = useMemo(() => getBackendUrl(), []);
   const [entity, setEntity] = useState<Entity>('CONTACT');
@@ -455,23 +461,21 @@ export default function ManagerScreen() {
 
   if (!isManagerMode) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.locked}>
+      <View style={embedded ? styles.embeddedLocked : styles.locked}>
           <MaterialIcons name="lock" size={34} color="#B42318" />
           <Text style={styles.lockedTitle}>Verwalter-Zugang erforderlich</Text>
           <Text style={styles.lockedText}>Melde dich im Account-Tab als Verwalter oder Admin an.</Text>
-        </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+    <>
         <View style={styles.header}>
           <Text style={styles.kicker}>Verwalter</Text>
           <Text style={styles.title}>Eintraege vorbereiten</Text>
           <Text style={styles.subtitle}>Aenderungen werden als Anfrage gespeichert und erst nach Admin-Freigabe aktiv.</Text>
+          <SyncStatusBadge />
         </View>
 
         <View style={styles.toggleRow}>
@@ -525,9 +529,9 @@ export default function ManagerScreen() {
               <View>
                 <Text style={styles.comboTitle}>Datum</Text>
                 <Pressable style={styles.dateField} onPress={() => setMealDatePickerOpen((current) => !current)}>
-                  <MaterialIcons name="calendar-month" size={21} color="#2F80ED" />
+                  <MaterialIcons name="calendar-month" size={21} color="#00684F" />
                   <Text style={styles.dateFieldText}>{formatFullDate(mealForm.date)}</Text>
-                  <MaterialIcons name={mealDatePickerOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
+                  <MaterialIcons name={mealDatePickerOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" style={styles.chevronIcon} />
                 </Pressable>
                 {mealDatePickerOpen ? (
                   <WeekDatePicker value={mealForm.date} onChange={(date) => {
@@ -549,7 +553,7 @@ export default function ManagerScreen() {
               <Pressable
                 style={[styles.segmentButton, lessonForm.isRecurring && styles.segmentButtonActive]}
                 onPress={() => setLessonForm((current) => ({ ...current, isRecurring: !current.isRecurring }))}>
-                <MaterialIcons name="event-repeat" size={21} color={lessonForm.isRecurring ? '#FFFFFF' : '#2F80ED'} />
+                <MaterialIcons name="event-repeat" size={21} color={lessonForm.isRecurring ? '#FFFFFF' : '#00684F'} />
                 <Text style={[styles.segmentButtonText, lessonForm.isRecurring && styles.segmentButtonTextActive]}>
                   Woechentlich wiederholen
                 </Text>
@@ -560,9 +564,9 @@ export default function ManagerScreen() {
                 <View>
                   <Text style={styles.comboTitle}>Datum</Text>
                   <Pressable style={styles.dateField} onPress={() => setLessonDatePickerOpen((current) => !current)}>
-                    <MaterialIcons name="calendar-month" size={21} color="#2F80ED" />
+                    <MaterialIcons name="calendar-month" size={21} color="#00684F" />
                     <Text style={styles.dateFieldText}>{formatFullDate(lessonForm.date)}</Text>
-                    <MaterialIcons name={lessonDatePickerOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" />
+                    <MaterialIcons name={lessonDatePickerOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" style={styles.chevronIcon} />
                   </Pressable>
                   {lessonDatePickerOpen ? (
                     <WeekDatePicker value={lessonForm.date} onChange={(date) => {
@@ -625,12 +629,24 @@ export default function ManagerScreen() {
             </View>
           ))}
         </View>
-      </ScrollView>
+    </>
+  );
+}
+
+export default function ManagerScreen() {
+  const styles = useThemedStyles(baseStyles);
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <SwipeableTabView>
+        <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+          <ManagerWorkspace />
+        </ScrollView>
+      </SwipeableTabView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#F5F7FB',
@@ -643,7 +659,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   kicker: {
-    color: '#0E6F63',
+    color: '#00684F',
     fontSize: 14,
     fontWeight: '800',
     marginBottom: 6,
@@ -681,8 +697,8 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   toggleButtonActive: {
-    backgroundColor: '#0E6F63',
-    borderColor: '#0E6F63',
+    backgroundColor: '#00684F',
+    borderColor: '#00684F',
   },
   toggleText: {
     color: '#475467',
@@ -721,9 +737,11 @@ const styles = StyleSheet.create({
   },
   comboLabel: {
     color: '#101828',
+    flex: 1,
     fontSize: 15,
     fontWeight: '800',
   },
+  chevronIcon: { flexShrink: 0, textAlign: 'center', width: 28 },
   comboMenu: {
     backgroundColor: '#FFFFFF',
     borderColor: '#D0D5DD',
@@ -752,7 +770,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   comboOptionTextActive: {
-    color: '#0E6F63',
+    color: '#00684F',
   },
   actionButton: {
     alignItems: 'center',
@@ -765,8 +783,8 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   actionButtonActive: {
-    backgroundColor: '#14213D',
-    borderColor: '#14213D',
+    backgroundColor: '#004B3A',
+    borderColor: '#004B3A',
   },
   actionText: {
     color: '#475467',
@@ -793,7 +811,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   itemCardActive: {
-    borderColor: '#0E6F63',
+    borderColor: '#00684F',
     borderWidth: 2,
   },
   itemTitle: {
@@ -900,8 +918,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dateChipActive: {
-    backgroundColor: '#2F80ED',
-    borderColor: '#2F80ED',
+    backgroundColor: '#00684F',
+    borderColor: '#00684F',
   },
   dateChipDay: {
     color: '#475467',
@@ -934,8 +952,8 @@ const styles = StyleSheet.create({
   },
   segmentButton: {
     alignItems: 'center',
-    backgroundColor: '#EEF4FF',
-    borderColor: '#B2CCFF',
+    backgroundColor: '#E7F4EF',
+    borderColor: '#93D3BA',
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: 'row',
@@ -945,11 +963,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   segmentButtonActive: {
-    backgroundColor: '#2F80ED',
-    borderColor: '#2F80ED',
+    backgroundColor: '#00684F',
+    borderColor: '#00684F',
   },
   segmentButtonText: {
-    color: '#2F80ED',
+    color: '#00684F',
     flexShrink: 1,
     fontSize: 14,
     fontWeight: '800',
@@ -960,7 +978,7 @@ const styles = StyleSheet.create({
   },
   button: {
     alignItems: 'center',
-    backgroundColor: '#2F80ED',
+    backgroundColor: '#00684F',
     borderRadius: 8,
     flexDirection: 'row',
     gap: 8,
@@ -998,7 +1016,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   sectionCount: {
-    color: '#2F80ED',
+    color: '#00684F',
     fontSize: 15,
     fontWeight: '800',
   },
@@ -1014,6 +1032,16 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 24,
+  },
+  embeddedLocked: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E4E7EC',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 10,
+    marginBottom: 18,
+    padding: 18,
   },
   lockedTitle: {
     color: '#101828',

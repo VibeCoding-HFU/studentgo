@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { getBackendUrl } from '@/constants/api';
+import { useThemedStyles } from '@/hooks/use-themed-styles';
 
 type BackendStatus = 'checking' | 'online' | 'offline';
 
@@ -10,6 +11,7 @@ const CHECK_INTERVAL_MS = 15000;
 const REQUEST_TIMEOUT_MS = 4000;
 
 export function BackendStatusBadge() {
+  const styles = useThemedStyles(baseStyles);
   const [status, setStatus] = useState<BackendStatus>('checking');
   const backendUrl = useMemo(() => getBackendUrl(), []);
 
@@ -69,7 +71,7 @@ export function BackendStatusBadge() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   badge: {
     alignItems: 'center',
     alignSelf: 'flex-start',
