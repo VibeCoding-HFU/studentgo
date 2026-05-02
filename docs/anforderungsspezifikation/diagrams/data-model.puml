@@ -1,0 +1,95 @@
+@startuml
+hide circle
+skinparam linetype ortho
+skinparam shadowing false
+
+entity User {
+  * id : Int
+  --
+  name : String
+  email : String
+  role : Role
+  publicKeyJson : String?
+}
+
+entity Session {
+  * id : Int
+  tokenHash : String
+  activeRole : Role
+  expiresAt : DateTime
+}
+
+entity ManagementChangeRequest {
+  * id : Int
+  action : ChangeAction
+  entity : ChangeEntity
+  status : ChangeStatus
+  payloadJson : String
+}
+
+entity Contact {
+  * id : Int
+  name : String
+  email : String
+  ownerId : Int?
+}
+
+entity Todo {
+  * id : Int
+  title : String
+  completedAt : DateTime?
+}
+
+entity TodoSubtask {
+  * id : Int
+  title : String
+  completedAt : DateTime?
+}
+
+entity StudyInfo {
+  * id : Int
+  category : String
+  encryptedPayload : String?
+}
+
+entity Lesson {
+  * id : Int
+  title : String
+  startTime : String
+  endTime : String
+  source : String
+}
+
+entity ScheduleDay {
+  * id : Int
+  day : String
+}
+
+entity LessonInvitation {
+  * id : Int
+  status : InvitationStatus
+}
+
+entity MealPlan {
+  * id : Int
+  day : String
+  mainDish : String
+}
+
+entity Canteen {
+  * id : Int
+  name : String
+}
+
+User ||--o{ Session
+User ||--o{ ManagementChangeRequest
+User ||--o{ Contact
+User ||--o{ Todo
+Todo ||--o{ TodoSubtask
+User ||--o{ StudyInfo
+ScheduleDay ||--o{ Lesson
+User ||--o{ Lesson
+Lesson ||--o{ LessonInvitation
+User ||--o{ LessonInvitation : sender/recipient
+Canteen ||--o{ MealPlan
+@enduml

@@ -1,0 +1,25 @@
+@startuml
+skinparam shadowing false
+
+actor "Student:in" as Student
+participant "StudentGo App" as App
+participant "Express API" as Api
+participant "StarPlan Import" as Import
+database "SQLite" as DB
+participant "HFU StarPlan" as StarPlan
+
+Student -> App : Studiengang, Semester, Woche waehlen
+App -> Api : GET /api/schedule/import-options
+Api -> Import : Optionen laden
+Import -> StarPlan : Daten abrufen
+StarPlan --> Import : Planoptionen
+Import --> Api : normalisierte Optionen
+Api --> App : Optionen
+Student -> App : Kurse importieren
+App -> Api : POST /api/schedule/import
+Api -> Import : Kurse parsen und abgleichen
+Import -> StarPlan : Stundenplandaten abrufen
+Import -> DB : Lessons, Days, Cache speichern
+Api --> App : importierte Veranstaltungen
+App --> Student : Wochenplan aktualisiert
+@enduml

@@ -1,0 +1,26 @@
+@startuml
+skinparam shadowing false
+
+actor "Manager:in" as Manager
+actor "Administrator:in" as Admin
+participant "Mobile App" as App
+participant "Express API" as Api
+database "SQLite" as DB
+
+Manager -> App : Aenderung erfassen
+App -> Api : POST /api/manager/change-requests
+Api -> DB : Request mit Status PENDING speichern
+Api --> App : Request bestaetigen
+
+Admin -> App : offene Antraege anzeigen
+App -> Api : GET /api/admin/change-requests
+Api -> DB : Requests laden
+DB --> Api : Liste
+Api --> App : Liste
+
+Admin -> App : Antrag annehmen
+App -> Api : POST /api/admin/change-requests/{id}/approve
+Api -> DB : Payload auf Zielentitaet anwenden
+Api -> DB : Status APPROVED setzen
+Api --> App : Ergebnis
+@enduml

@@ -1,0 +1,25 @@
+@startuml
+skinparam nodeStyle rectangle
+skinparam shadowing false
+
+node "Mobilgeraet / Webbrowser" {
+  artifact "StudentGo App\nExpo React Native" as App
+  database "SecureStore / Local Storage\nSession, Private Keys, Offline Cache" as Local
+}
+
+node "Backend Host" {
+  artifact "Node.js Express API" as Api
+  artifact "Prisma Client" as Prisma
+  database "SQLite Datenbank" as DB
+}
+
+cloud "HFU StarPlan" as StarPlan
+cloud "SWFR Website" as SWFR
+
+App --> Api : HTTPS REST/JSON
+App --> Local : liest/schreibt lokal
+Api --> Prisma
+Prisma --> DB
+Api --> StarPlan : Import Stundenplan
+Api --> SWFR : Import Mensa
+@enduml

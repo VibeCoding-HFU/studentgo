@@ -1,0 +1,47 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+actor "Student:in" as Student
+actor "Manager:in" as Manager
+actor "Administrator:in" as Admin
+actor "SWFR Mensa" as SWFR
+actor "HFU StarPlan" as StarPlan
+
+rectangle "StudentGo" {
+  usecase "Registrieren und anmelden" as UCAuth
+  usecase "Rolle aktivieren" as UCRole
+  usecase "Kontakte suchen und pflegen" as UCContacts
+  usecase "To-dos und private Notizen verwalten" as UCTodos
+  usecase "Stundenplan anzeigen" as UCSchedule
+  usecase "Stundenplan importieren" as UCImport
+  usecase "Lehrveranstaltung teilen" as UCInvite
+  usecase "Mensa-Angebote anzeigen" as UCMeals
+  usecase "Aenderungsantrag stellen" as UCChange
+  usecase "Aenderungsantrag pruefen" as UCReview
+  usecase "Benutzer verwalten" as UCUsers
+  usecase "Offline-Daten synchronisieren" as UCOffline
+}
+
+Student --> UCAuth
+Student --> UCRole
+Student --> UCContacts
+Student --> UCTodos
+Student --> UCSchedule
+Student --> UCImport
+Student --> UCInvite
+Student --> UCMeals
+Student --> UCOffline
+Manager --> UCChange
+Admin --> UCReview
+Admin --> UCUsers
+Admin --> UCChange
+SWFR --> UCMeals
+StarPlan --> UCImport
+
+UCImport ..> UCSchedule : <<include>>
+UCChange ..> UCReview : <<extend>>
+UCOffline ..> UCContacts : <<include>>
+UCOffline ..> UCTodos : <<include>>
+@enduml

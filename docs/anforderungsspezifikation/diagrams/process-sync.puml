@@ -1,0 +1,37 @@
+@startuml
+skinparam shadowing false
+
+|Student:in|
+start
+:Kontakt oder To-do anlegen;
+
+|Mobile App|
+:POST an Backend senden;
+if (Backend erreichbar?) then (ja)
+  |Backend|
+  :Daten validieren;
+  :Datensatz speichern;
+  |Mobile App|
+  :Ansicht als synchronisiert markieren;
+else (nein)
+  |OfflineProvider / SyncContext|
+  :Aktion lokal in Queue speichern;
+  :GET-Cache fuer Anzeige nutzen;
+  |Student:in|
+  :Pending-Status sehen;
+endif
+
+|SyncContext|
+repeat
+  :Verbindung pruefen;
+repeat while (offline?) is (ja)
+:Queued Request mit X-StudentGo-Sync-Replay senden;
+
+|Backend|
+:Datensatz speichern;
+
+|Mobile App|
+:Queue-Eintrag entfernen;
+:Listen neu laden;
+stop
+@enduml
