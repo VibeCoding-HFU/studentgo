@@ -102,3 +102,5 @@ This project is an Expo React Native app using TypeScript, Expo Router, React 19
 - For UI changes, run the app with `npm start` or the relevant target command when practical.
 - Check behavior on small screens and both light and dark color schemes when styling or layout changes are involved.
 - Keep changes focused. Avoid unrelated refactors while implementing a feature or fix.
+
+- dawd
