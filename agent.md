@@ -12,6 +12,30 @@ This project is an Expo React Native app using TypeScript, Expo Router, React 19
 - Put design tokens, theme values, and constants in `constants/`.
 - Prefer imports through the configured `@/` alias for project files.
 
+## Modular Platform Architecture
+<!-- Why: StudentGo should grow as a small core platform with independent frontend modules, instead of becoming a tightly coupled app where every feature reaches into every other feature. -->
+
+- Treat the core app as the platform shell: routing, navigation, theming, shared primitives, authentication/session state, permissions, telemetry, and cross-module composition belong in core areas such as `app/`, `components/`, `hooks/`, and `constants/`.
+- Put new product features in module boundaries instead of scattering feature code across shared folders. Prefer a `modules/<module-name>/` structure when adding a substantial feature.
+- Keep `app/` route files thin. A route should compose module screens and platform layout; feature behavior should live inside the owning module.
+- A module should own its UI, hooks, types, service functions, validation, and local helpers. Use names such as `modules/<module-name>/components`, `modules/<module-name>/hooks`, `modules/<module-name>/services`, and `modules/<module-name>/types` when the module needs them.
+- Modules may import from the platform core and shared primitives, but modules should not import internal files from other modules. If one module needs another module's capability, expose a small public API from that module first.
+- Add or update a module entry file, such as `modules/<module-name>/index.ts`, for exports that are intentionally public. Keep internal implementation files private by convention.
+- Avoid building large cross-module utility folders. Promote code into shared/core only after at least two modules need it and the shared abstraction is stable.
+- Keep module state local by default. Shared state belongs in the platform core only when it truly coordinates multiple modules.
+- Prefer feature flags, configuration, or registry-style composition for optional modules so the platform can enable modules gradually.
+- When implementing a new feature, first decide whether it is platform/core behavior or a module. Default to a module unless it is needed by the whole app.
+
+## Backend And Prisma
+<!-- Why: The frontend should stay modular and backend-agnostic while the backend/data layer can be implemented with Prisma without leaking database concerns into screens. -->
+
+- Use Prisma only on the backend/server side. Do not import Prisma clients, database models, or database access code directly into Expo route screens or React Native components.
+- Frontend modules should talk to backend capabilities through typed service functions or API clients owned by the module, for example `modules/<module-name>/services`.
+- Keep backend data contracts typed at the boundary. Map Prisma/database shapes into frontend-facing DTOs or domain types before they reach UI components.
+- Keep Prisma schema, migrations, seeds, and database-specific helpers in backend-owned folders once the backend is introduced. Do not mix database files into frontend module UI folders.
+- Keep module APIs stable and narrow. A backend change should usually require edits only in the owning module's service/type layer, not across unrelated screens.
+- When backend work starts, document the chosen backend folder structure here before adding many data access files.
+
 ## React Best Practices
 <!-- Why: This section keeps React code predictable, readable, and maintainable as the app grows. -->
 
