@@ -1,42 +1,59 @@
-# Welcome to your Expo app 👋
+# StudentGo
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+StudentGo ist eine Expo/React-Native-App mit lokalem Express-Backend und Prisma/SQLite-Datenbank.
 
-## Get started
+Wichtig: Die App verwendet native Crypto-Abhaengigkeiten (`react-native-quick-crypto`, `react-native-nitro-modules`, `react-native-quick-base64`, `react-native-get-random-values`). Dadurch reicht Expo Go fuer die native App nicht aus. Fuer Android/iOS muss ein Development Build mit `expo run:android` oder `expo run:ios` gebaut werden.
 
-1. Install dependencies
+## Voraussetzungen
+
+- Node.js und npm
+- Android Studio mit Android Emulator oder ein per USB verbundenes Android-Geraet
+- Fuer iOS: macOS mit Xcode und iOS Simulator
+- Optional: Expo CLI ueber `npx expo ...` verwenden, eine globale Installation ist nicht noetig
+
+## Installation
+
+1. Abhaengigkeiten installieren:
 
    ```bash
    npm install
    ```
 
-2. Start the app
+   Der `postinstall`-Schritt patcht automatisch das React-Native-Gradle-Plugin fuer Gradle 9. Nach dem Loeschen von `node_modules` deshalb immer wieder `npm install` ausfuehren.
+
+2. Lokale Umgebungsvariablen anlegen:
 
    ```bash
-   npx expo start
+   cp .env.example .env
    ```
 
-In the output, you'll find options to open the app in a
+   Standardwerte:
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+   ```env
+   DATABASE_URL="file:./dev.db"
+   PORT="3001"
+   CORS_ORIGIN="http://localhost:8081"
+   ```
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+3. Prisma vorbereiten und lokale Datenbank befuellen:
 
-## Backend
+   ```bash
+   npm run db:generate
+   npm run db:push
+   npm run db:seed
+   ```
 
-StudentGo now includes a local Node.js backend with Express and Prisma. The default database is SQLite and is configured through `DATABASE_URL` in `.env`.
+## Starten
+
+### Backend
+
+Das Backend laeuft standardmaessig auf `http://localhost:3001`.
 
 ```bash
-npm run db:generate
-npm run db:push
-npm run db:seed
 npm run backend:dev
 ```
 
-The backend runs on `http://localhost:3001` by default. Available starter endpoints:
+Nuetzliche Endpunkte:
 
 - `GET /health`
 - `GET /api/contacts`
@@ -49,26 +66,83 @@ The backend runs on `http://localhost:3001` by default. Available starter endpoi
 - `GET /api/study-info`
 - `GET /api/schedule`
 
-## Get a fresh project
+### App im Browser
 
-When you're ready, run:
+Die Web-Version kann ohne Native Build gestartet werden:
 
 ```bash
-npm run reset-project
+npm run web
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### App auf Android/iOS
 
-## Learn more
+Wegen der nativen Crypto-Library muss die native App als Development Build gestartet werden:
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+npm run android
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+oder auf macOS:
 
-## Join the community
+```bash
+npm run ios
+```
 
-Join our community of developers creating universal apps.
+Danach kann der Metro-Bundler auch separat gestartet werden:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+npm run start
+```
+
+Oeffne die App dann im zuvor gebauten Development Build, nicht in Expo Go.
+
+## Native Crypto: haeufige Stolperstellen
+
+- Expo Go unterstuetzt `react-native-quick-crypto` nicht. Fehlermeldungen wie `Android-Verschluesselung benoetigt einen neu gebauten Dev-Client...` bedeuten, dass die App nicht mit dem passenden Development Build laeuft.
+- Nach Aenderungen an nativen Abhaengigkeiten oder Expo-Config-Plugins erneut bauen:
+
+  ```bash
+  npm run android
+  ```
+
+  bzw.
+
+  ```bash
+  npm run ios
+  ```
+
+- Nach dem Loeschen von `node_modules` immer zuerst `npm install` ausfuehren, damit der `postinstall`-Patch angewendet wird.
+- Die relevanten nativen Abhaengigkeiten stehen in `package.json`; das Config-Plugin `react-native-quick-crypto` ist in `app.json` eingetragen.
+
+## Datenbankbefehle
+
+```bash
+npm run db:generate  # Prisma Client generieren
+npm run db:push      # Schema in die lokale SQLite-Datenbank schreiben
+npm run db:seed      # Seed-Daten einfuegen
+npm run db:studio    # Prisma Studio starten
+```
+
+## API-URL der App
+
+Die App verwendet standardmaessig `http://localhost:3001`. Bei echten Geraeten zeigt `localhost` jedoch auf das Geraet selbst. Dann kann die Backend-URL ueber `EXPO_PUBLIC_API_URL` gesetzt werden, zum Beispiel:
+
+```bash
+EXPO_PUBLIC_API_URL="http://192.168.178.20:3001" npm run start
+```
+
+Die IP-Adresse muss die Adresse des Entwicklungsrechners im selben Netzwerk sein.
+
+## Entwicklung
+
+- App-Routen liegen im Ordner `app`.
+- Gemeinsame Kontexte liegen in `contexts`.
+- Clientseitige Crypto-Helfer liegen in `lib/client-crypto.*`.
+- Backend-Code liegt in `backend/src`.
+- Prisma-Schema und Seeds liegen in `prisma`.
+
+Weitere Checks:
+
+```bash
+npm run lint
+```

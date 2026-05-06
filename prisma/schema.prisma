@@ -13,19 +13,29 @@ enum Role {
   ADMIN
 }
 
+enum DataSource {
+  MANUAL
+  PERSONAL
+  SWFR
+  STARPLAN
+  STARPLAN_ARCHIVE
+  INVITATION
+}
+
 model User {
   id           Int       @id @default(autoincrement())
   name         String
   email        String    @unique
-  publicKeyJson String?
+  publicKeyJson String?  @ignore
   passwordHash String
   passwordSalt String
   role         Role      @default(USER)
   sessions     Session[]
+  publicKeys   UserPublicKey[]
   changeRequests ManagementChangeRequest[]
   contacts     Contact[]
   studyInfos   StudyInfo[]
-  modules      Module[]
+  studyModules StudyModule[]
   lessons      Lesson[]
   todos        Todo[]
   lessonVisits LessonVisit[]
@@ -36,6 +46,17 @@ model User {
   updatedAt    DateTime  @updatedAt
 }
 
+model UserPublicKey {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKeyJson String
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, publicKeyJson])
+  @@index([userId])
+}
+
 model Session {
   id        Int      @id @default(autoincrement())
   tokenHash String   @unique
@@ -44,6 +65,9 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   expiresAt DateTime
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model PendingAccount {
@@ -58,6 +82,8 @@ model PendingAccount {
   requestedById         Int?
   createdAt             DateTime @default(now())
   expiresAt             DateTime
+
+  @@index([expiresAt])
 }
 
 enum ChangeAction {
@@ -100,6 +126,10 @@ model ManagementChangeRequest {
   reviewNote   String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+
+  @@index([requestedById])
+  @@index([status])
+  @@index([entity, targetId])
 }
 
 model Contact {
@@ -113,6 +143,8 @@ model Contact {
   room      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
 }
 
 model Canteen {
@@ -135,11 +167,15 @@ model MealPlan {
   priceCents     Int
   currency       String   @default("EUR")
   isPersonal     Boolean  @default(false)
-  source         String   @default("MANUAL")
+  source         DataSource @default(MANUAL)
   sourceKey      String?  @unique
   importedAt     DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@index([canteenId])
+  @@index([date])
+  @@index([source])
 }
 
 model Deadline {
@@ -149,6 +185,8 @@ model Deadline {
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([date])
 }
 
 model Todo {
@@ -161,6 +199,9 @@ model Todo {
   subtasks    TodoSubtask[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+
+  @@index([ownerId])
+  @@index([completedAt])
 }
 
 model TodoSubtask {
@@ -171,6 +212,8 @@ model TodoSubtask {
   completedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([todoId])
 }
 
 model StudyInfo {
@@ -186,9 +229,12 @@ model StudyInfo {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([category, sortOrder])
 }
 
-model Module {
+model StudyModule {
   id        Int      @id @default(autoincrement())
   ownerId   Int?
   owner     User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -197,6 +243,9 @@ model Module {
   content   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@map("Module")
 }
 
 model ScheduleDay {
@@ -225,13 +274,19 @@ model Lesson {
   isRecurring   Boolean     @default(false)
   room          String?
   lecturer      String?
-  source        String      @default("MANUAL")
+  source        DataSource  @default(MANUAL)
   sourceKey     String?     @unique
   importedAt    DateTime?
   invitations   LessonInvitation[]
   visits         LessonVisit[]
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
+
+  @@index([ownerId])
+  @@index([date])
+  @@index([source])
+  @@index([ownerId, date])
+  @@index([scheduleDayId])
 }
 
 model LessonVisit {
@@ -246,6 +301,8 @@ model LessonVisit {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, lessonId, date])
+  @@index([lessonId])
+  @@index([userId])
 }
 
 model LessonModulePreference {
@@ -258,6 +315,7 @@ model LessonModulePreference {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, moduleKey])
+  @@index([userId])
 }
 
 model LessonInvitation {
@@ -277,6 +335,9 @@ model LessonInvitation {
   updatedAt   DateTime         @updatedAt
 
   @@unique([lessonId, recipientId])
+  @@index([recipientId])
+  @@index([senderId])
+  @@index([status])
 }
 
 model ScheduleImportCache {
@@ -293,4 +354,7 @@ model ScheduleImportCache {
   importedAt   DateTime @default(now())
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([weekStart])
+  @@index([importedAt])
 }

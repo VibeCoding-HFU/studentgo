@@ -11,7 +11,8 @@ async function main() {
   await prisma.canteen.deleteMany();
   await prisma.deadline.deleteMany();
   await prisma.studyInfo.deleteMany();
-  await prisma.module.deleteMany();
+  await prisma.studyModule.deleteMany();
+  await prisma.userPublicKey.deleteMany();
   await prisma.contact.deleteMany();
 
   console.log("Cleared StudentGo sample data.");

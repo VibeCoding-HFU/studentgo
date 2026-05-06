@@ -1,10 +1,11 @@
-import { getBackendUrl } from '@/constants/api';
 import { generateAccountKeyPair, savePrivateKey } from '@/lib/client-crypto';
 import { addPublicKeyToValue } from '@/lib/client-crypto.shared';
 import { getStoredAuthSession, removeAuthSession, saveAuthSession } from '@/lib/auth-session-storage';
+import { apiFetch, apiJson } from '@/src/shared/api/client';
+import { Role } from '@/src/shared/types/auth';
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
-export type Role = 'USER' | 'MANAGER' | 'ADMIN';
+export type { Role } from '@/src/shared/types/auth';
 
 type AuthUser = {
   email: string;
@@ -37,19 +38,9 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function readError(response: Response) {
-  try {
-    const body = await response.json();
-    return typeof body.error === 'string' ? body.error : 'Die Anfrage ist fehlgeschlagen.';
-  } catch {
-    return 'Die Anfrage ist fehlgeschlagen.';
-  }
-}
-
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isSessionLoaded, setIsSessionLoaded] = useState(false);
-  const backendUrl = useMemo(() => getBackendUrl(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,17 +61,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   async function authenticate(path: string, body: Record<string, unknown>) {
-    const response = await fetch(`${backendUrl}${path}`, {
-      body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
-    });
-
-    if (!response.ok) {
-      throw new Error(await readError(response));
-    }
-
-    const nextSession = (await response.json()) as AuthSession;
+    const nextSession = await apiJson<AuthSession>(path, { body, method: 'POST' });
     setSession(nextSession);
     await saveAuthSession(nextSession);
   }
@@ -91,15 +72,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   async function register(name: string, email: string, password: string, role: Role) {
     const keyPair = await generateAccountKeyPair();
-    const response = await fetch(`${backendUrl}/api/auth/register`, {
-      body: JSON.stringify({ email, name, password, publicKeyJson: keyPair.publicKeyJson, role }),
-      headers: { 'Content-Type': 'application/json' },
+    await apiJson('/api/auth/register', {
+      body: { email, name, password, publicKeyJson: keyPair.publicKeyJson, role },
       method: 'POST',
     });
-
-    if (!response.ok) {
-      throw new Error(await readError(response));
-    }
 
     try {
       await savePrivateKey(email, keyPair.privateKeyJson);
@@ -122,10 +98,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return;
     }
 
-    await fetch(`${backendUrl}/api/auth/logout`, {
-      headers: { Authorization: `Bearer ${token}` },
-      method: 'POST',
-    }).catch(() => undefined);
+    await apiFetch('/api/auth/logout', { method: 'POST', token }).catch(() => undefined);
   }
 
   function updatePublicKey(publicKeyJson: string) {
