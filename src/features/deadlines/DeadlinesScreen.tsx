@@ -10,6 +10,7 @@ import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 import { useSync } from '@/contexts/sync-context';
 import { decryptPayloadWithPrivateKeys, encryptPayloadForPublicKeys, getPrivateKeys, publicKeyJsonsFromValue } from '@/lib/client-crypto';
+import { completeTodoRequest, createStudyInfo, createTodo, fetchStudyInfo, fetchTodos, toggleSubtaskRequest } from './api';
 import { TodoFormPanel } from './components/TodoFormPanel';
 import { baseStyles } from './styles';
 import type { StudyInfo, Todo } from './types';
@@ -39,29 +40,24 @@ export default function DeadlinesScreen() {
       return;
     }
 
-    const response = await fetch(`${backendUrl}/api/todos`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!response.ok) {
+    try {
+      setTodos((await fetchTodos({ token })).map((todo) => ({ ...todo, syncState: 'synced' })));
+      setError('');
+    } catch {
       setError('To-Dos konnten nicht geladen werden.');
-      return;
     }
-
-    setTodos(((await response.json()) as Todo[]).map((todo) => ({ ...todo, syncState: 'synced' })));
-  }, [backendUrl, token]);
+  }, [token]);
 
   const loadNotes = useCallback(async () => {
-    const response = await fetch(`${backendUrl}/api/study-info`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
+    let data: { spo: StudyInfo[] };
 
-    if (!response.ok) {
+    try {
+      data = await fetchStudyInfo(token);
+    } catch {
       setNoteError('Notizen konnten nicht geladen werden.');
       return;
     }
 
-    const data = (await response.json()) as { spo: StudyInfo[] };
     const privateKeys = user?.email ? await getPrivateKeys(user.email) : [];
     const decryptedNotes = await Promise.all(data.spo.map(async (item) => {
       if (privateKeys.length === 0 || !item.encryptedPayload || !item.encryptedKey || !item.encryptionIv) {
@@ -90,7 +86,7 @@ export default function DeadlinesScreen() {
 
     setNoteError('');
     setNotes(decryptedNotes);
-  }, [backendUrl, token, user?.email]);
+  }, [token, user?.email]);
 
   useEffect(() => {
     loadTodos();
@@ -134,11 +130,7 @@ export default function DeadlinesScreen() {
     };
 
     try {
-      const response = await fetch(`${backendUrl}/api/todos`, {
-        body: JSON.stringify(body),
-        headers,
-        method: 'POST',
-      });
+      const response = await createTodo({ token }, body);
 
       if (!response.ok) {
         setError('To-Do konnte nicht gespeichert werden.');
@@ -204,19 +196,12 @@ export default function DeadlinesScreen() {
       title: noteForm.title,
     });
 
-    const response = await fetch(`${backendUrl}/api/study-info`, {
-      body: JSON.stringify({
+    const response = await createStudyInfo({ token }, {
         ...noteForm,
         ...encrypted,
         content: 'Verschluesselte Notiz',
         title: 'Verschluesselte Notiz',
-      }),
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      method: 'POST',
-    });
+      });
 
     if (!response.ok) {
       setNoteError('Notiz konnte nicht gespeichert werden.');
@@ -234,10 +219,7 @@ export default function DeadlinesScreen() {
       return;
     }
 
-    const response = await fetch(`${backendUrl}/api/todos/${todoId}/complete`, {
-      headers: { Authorization: `Bearer ${token}` },
-      method: 'POST',
-    });
+    const response = await completeTodoRequest({ token }, todoId);
 
     if (!response.ok) {
       setError('To-Do konnte nicht abgehakt werden.');
@@ -258,10 +240,7 @@ export default function DeadlinesScreen() {
       return;
     }
 
-    const response = await fetch(`${backendUrl}/api/todos/${todoId}/subtasks/${subtaskId}/toggle`, {
-      headers: { Authorization: `Bearer ${token}` },
-      method: 'POST',
-    });
+    const response = await toggleSubtaskRequest({ token }, todoId, subtaskId);
 
     if (!response.ok) {
       setError('Unteraufgabe konnte nicht aktualisiert werden.');

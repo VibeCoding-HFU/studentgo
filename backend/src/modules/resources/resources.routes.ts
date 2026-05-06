@@ -1,5 +1,5 @@
 import { Express } from "express";
-import { getSession, requireManager } from "../auth/auth.service";
+import { getSession, requireManager, requireSessionValue } from "../auth/auth.service";
 import { prisma } from "../../prisma";
 import { endOfWeek, parseWeekStart } from "../../shared/date-utils";
 import { contactData, deadlineData, mealData, studyInfoData } from "../../shared/domain-data";
@@ -73,12 +73,7 @@ export function registerResourceRoutes(app: Express) {
   });
 
   app.post("/api/contacts", async (request, response) => {
-    const session = await getSession(request);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
+    const session = await requireSessionValue(request);
 
     const contactPayload = validateContactPayload(objectPayload(request.body));
     const contact = await prisma.contact.create({
@@ -138,12 +133,7 @@ export function registerResourceRoutes(app: Express) {
   });
 
   app.get("/api/todos", async (request, response) => {
-    const session = await getSession(request);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
+    const session = await requireSessionValue(request);
 
     const todos = await prisma.todo.findMany({
       include: {
@@ -162,7 +152,7 @@ export function registerResourceRoutes(app: Express) {
   });
 
   app.post("/api/todos", async (request, response) => {
-    const session = await getSession(request);
+    const session = await requireSessionValue(request);
     const title = typeof request.body.title === "string" ? request.body.title.trim() : "";
     const description = typeof request.body.description === "string" && request.body.description.trim() ? request.body.description.trim() : null;
     const subtasks = Array.isArray(request.body.subtasks)
@@ -170,11 +160,6 @@ export function registerResourceRoutes(app: Express) {
           .map((subtask: unknown) => (typeof subtask === "string" ? subtask.trim() : ""))
           .filter(Boolean)
       : [];
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
 
     if (!title) {
       response.status(400).json({ error: "Todo title is required." });
@@ -201,19 +186,9 @@ export function registerResourceRoutes(app: Express) {
   });
 
   app.post("/api/todos/:id/complete", async (request, response) => {
-    const session = await getSession(request);
-    const id = Number(request.params.id);
+    const session = await requireSessionValue(request);
+    const id = numericId(request.params.id, "todo id");
     const completedAt = new Date();
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
-    if (Number.isNaN(id)) {
-      response.status(400).json({ error: "Invalid todo id." });
-      return;
-    }
 
     const existingTodo = await prisma.todo.findFirst({ where: { id, ownerId: session.userId } });
 
@@ -246,19 +221,9 @@ export function registerResourceRoutes(app: Express) {
   });
 
   app.post("/api/todos/:todoId/subtasks/:subtaskId/toggle", async (request, response) => {
-    const session = await getSession(request);
-    const todoId = Number(request.params.todoId);
-    const subtaskId = Number(request.params.subtaskId);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
-    if (Number.isNaN(todoId) || Number.isNaN(subtaskId)) {
-      response.status(400).json({ error: "Invalid todo or subtask id." });
-      return;
-    }
+    const session = await requireSessionValue(request);
+    const todoId = numericId(request.params.todoId, "todo id");
+    const subtaskId = numericId(request.params.subtaskId, "subtask id");
 
     const todo = await prisma.todo.findFirst({
       include: { subtasks: true },
@@ -315,12 +280,7 @@ export function registerResourceRoutes(app: Express) {
   });
 
   app.post("/api/study-info", async (request, response) => {
-    const session = await getSession(request);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
+    const session = await requireSessionValue(request);
 
     const info = await prisma.studyInfo.create({
       data: {

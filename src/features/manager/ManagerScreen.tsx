@@ -5,10 +5,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
 import { SyncStatusBadge } from '@/components/sync-status-badge';
-import { getBackendUrl } from '@/constants/api';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 import { dayFromDate, dayOptions, timeOptions } from '@/src/shared/utils/dates';
+import { createManagerChangeRequest, fetchManagerBundle } from './api';
 import { ActionComboBox, ComboBox } from './components/ManagerComboBox';
 import { WeekDatePicker } from './components/ManagerWeekDatePicker';
 import { baseStyles } from './styles';
@@ -18,7 +18,6 @@ import { currencyOptions, emptyContact, emptyInfo, emptyLesson, emptyMeal, forma
 export function ManagerWorkspace({ embedded = false }: { embedded?: boolean }) {
   const styles = useThemedStyles(baseStyles);
   const { isManagerMode, token } = useAuth();
-  const backendUrl = useMemo(() => getBackendUrl(), []);
   const [entity, setEntity] = useState<Entity>('CONTACT');
   const [action, setAction] = useState<Action>('CREATE');
   const [targetId, setTargetId] = useState<number | null>(null);
@@ -61,32 +60,18 @@ export function ManagerWorkspace({ embedded = false }: { embedded?: boolean }) {
     setError('');
 
     try {
-      const [contactsResponse, mealsResponse, scheduleResponse, infoResponse, requestsResponse] = await Promise.all([
-        fetch(`${backendUrl}/api/contacts`),
-        fetch(`${backendUrl}/api/meals`),
-        fetch(`${backendUrl}/api/schedule`),
-        fetch(`${backendUrl}/api/study-info`),
-        fetch(`${backendUrl}/api/manager/change-requests`, { headers: { Authorization: `Bearer ${token}` } }),
-      ]);
-
-      if (!contactsResponse.ok || !mealsResponse.ok || !scheduleResponse.ok || !infoResponse.ok || !requestsResponse.ok) {
-        throw new Error('Verwaltungsdaten konnten nicht geladen werden.');
-      }
-
-      const scheduleBody = (await scheduleResponse.json()) as { days: ScheduleDay[] };
-      const schedule = scheduleBody.days;
-      const info = (await infoResponse.json()) as { spo: StudyInfo[] };
-      setContacts((await contactsResponse.json()) as Contact[]);
-      setMeals((await mealsResponse.json()) as Meal[]);
-      setLessons(schedule.flatMap((day) => day.lessons.map((lesson) => ({ ...lesson, day: day.day }))));
-      setInfos(info.spo);
-      setRequests((await requestsResponse.json()) as ChangeRequest[]);
+      const data = await fetchManagerBundle(token);
+      setContacts(data.contacts);
+      setMeals(data.meals);
+      setLessons(data.lessons);
+      setInfos(data.infos);
+      setRequests(data.requests);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Verwaltungsdaten konnten nicht geladen werden.');
     } finally {
       setIsLoading(false);
     }
-  }, [backendUrl, token]);
+  }, [token]);
 
   useEffect(() => {
     loadData();
@@ -180,6 +165,11 @@ export function ManagerWorkspace({ embedded = false }: { embedded?: boolean }) {
     setError('');
     setMessage('');
 
+    if (!token) {
+      setError('Verwalter-Sitzung ist nicht geladen.');
+      return;
+    }
+
     const payload =
       entity === 'CONTACT'
         ? contactForm
@@ -200,18 +190,11 @@ export function ManagerWorkspace({ embedded = false }: { embedded?: boolean }) {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${backendUrl}/api/manager/change-requests`, {
-        body: JSON.stringify({
-          action,
-          entity,
-          payload,
-          targetId: action === 'CREATE' ? null : targetId,
-        }),
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
+      const response = await createManagerChangeRequest(token, {
+        action,
+        entity,
+        payload,
+        targetId: action === 'CREATE' ? null : targetId,
       });
 
       if (!response.ok) {

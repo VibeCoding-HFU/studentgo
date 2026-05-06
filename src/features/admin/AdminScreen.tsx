@@ -1,96 +1,21 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
 import { SyncStatusBadge } from '@/components/sync-status-badge';
-import { getBackendUrl } from '@/constants/api';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 import { readApiError } from '@/src/shared/api/client';
-import { Role, roleLabel, roles } from '@/src/shared/types/auth';
+import { Role, roleLabel } from '@/src/shared/types/auth';
 import { ManagerWorkspace } from '@/src/features/manager/ManagerScreen';
+import { AdminUser, ChangeRequest, Summary, deleteAdminUserRequest, fetchAdminBundle, reviewChangeRequest, saveAdminUser } from './api';
+import { AdminRoleComboBox } from './components/AdminRoleComboBox';
 import { baseStyles } from './styles';
-
-type Summary = {
-  contacts: number;
-  deadlines: number;
-  meals: number;
-  modules: number;
-  pendingRequests: number;
-  sessions: number;
-  users: number;
-};
-
-type AdminUser = {
-  createdAt: string;
-  email: string;
-  id: number;
-  name: string;
-  role: Role;
-};
-
-type ChangeRequest = {
-  action: 'CREATE' | 'UPDATE' | 'DELETE';
-  createdAt: string;
-  entity: 'CONTACT' | 'DEADLINE' | 'MEAL' | 'LESSON' | 'STUDY_INFO';
-  id: number;
-  payload: Record<string, unknown>;
-  requestedBy: {
-    email: string;
-    name: string;
-  };
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-};
+import { requestTitle } from './utils';
 
 const emptyUserForm = { email: '', name: '', password: '', role: 'USER' as Role };
-
-function RoleComboBox({ value, onChange }: { onChange: (role: Role) => void; value: Role }) {
-  const styles = useThemedStyles(baseStyles);
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <View style={[styles.comboBox, isOpen && styles.comboBoxOpen]}>
-      <Pressable accessibilityRole="combobox" style={styles.comboButton} onPress={() => setIsOpen((current) => !current)}>
-        <Text style={styles.comboLabel}>{roleLabel(value)}</Text>
-        <MaterialIcons name={isOpen ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" style={styles.chevronIcon} />
-      </Pressable>
-      {isOpen ? (
-        <View style={styles.comboMenu}>
-          {roles.map((roleOption) => (
-            <Pressable
-              key={roleOption}
-              style={[styles.comboOption, value === roleOption && styles.comboOptionActive]}
-              onPress={() => {
-                onChange(roleOption);
-                setIsOpen(false);
-              }}>
-              <Text style={[styles.comboOptionText, value === roleOption && styles.comboOptionTextActive]}>
-                {roleLabel(roleOption)}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function requestTitle(request: ChangeRequest) {
-  const entity =
-    request.entity === 'CONTACT'
-      ? 'Kontakt'
-      : request.entity === 'DEADLINE'
-        ? 'Frist'
-        : request.entity === 'MEAL'
-          ? 'Mensa'
-          : request.entity === 'LESSON'
-            ? 'Plan'
-            : 'Info';
-  const action = request.action === 'CREATE' ? 'anlegen' : request.action === 'UPDATE' ? 'bearbeiten' : 'loeschen';
-  return `${entity} ${action}`;
-}
 
 export default function AdminScreen() {
   const styles = useThemedStyles(baseStyles);
@@ -104,15 +29,6 @@ export default function AdminScreen() {
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const backendUrl = useMemo(() => getBackendUrl(), []);
-
-  const headers = useMemo(
-    () => ({
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    }),
-    [token],
-  );
 
   const loadAdminData = useCallback(async () => {
     if (!token) {
@@ -123,25 +39,16 @@ export default function AdminScreen() {
     setError('');
 
     try {
-      const [summaryResponse, usersResponse, requestsResponse] = await Promise.all([
-        fetch(`${backendUrl}/api/admin/summary`, { headers }),
-        fetch(`${backendUrl}/api/admin/users`, { headers }),
-        fetch(`${backendUrl}/api/admin/change-requests`, { headers }),
-      ]);
-
-      if (!summaryResponse.ok || !usersResponse.ok || !requestsResponse.ok) {
-        throw new Error('Admin-Daten konnten nicht geladen werden.');
-      }
-
-      setSummary((await summaryResponse.json()) as Summary);
-      setUsers((await usersResponse.json()) as AdminUser[]);
-      setRequests((await requestsResponse.json()) as ChangeRequest[]);
+      const data = await fetchAdminBundle({ token });
+      setSummary(data.summary);
+      setUsers(data.users);
+      setRequests(data.requests);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Admin-Daten konnten nicht geladen werden.');
     } finally {
       setIsLoading(false);
     }
-  }, [backendUrl, headers, token]);
+  }, [token]);
 
   useEffect(() => {
     loadAdminData();
@@ -160,19 +67,17 @@ export default function AdminScreen() {
   }
 
   async function submitUser() {
+    if (!token) {
+      setError('Admin-Sitzung ist nicht geladen.');
+      return;
+    }
+
     setError('');
     setMessage('');
     setIsLoading(true);
 
     try {
-      const response = await fetch(
-        selectedUserId ? `${backendUrl}/api/admin/users/${selectedUserId}` : `${backendUrl}/api/admin/users`,
-        {
-          body: JSON.stringify(userForm),
-          headers,
-          method: selectedUserId ? 'PATCH' : 'POST',
-        },
-      );
+      const response = await saveAdminUser({ token }, userForm, selectedUserId);
 
       if (!response.ok) {
         throw new Error(await readApiError(response));
@@ -189,15 +94,17 @@ export default function AdminScreen() {
   }
 
   async function deleteUser(id: number) {
+    if (!token) {
+      setError('Admin-Sitzung ist nicht geladen.');
+      return;
+    }
+
     setError('');
     setMessage('');
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${backendUrl}/api/admin/users/${id}`, {
-        headers,
-        method: 'DELETE',
-      });
+      const response = await deleteAdminUserRequest({ token }, id);
 
       if (!response.ok) {
         throw new Error(await readApiError(response));
@@ -214,16 +121,17 @@ export default function AdminScreen() {
   }
 
   async function reviewRequest(id: number, decision: 'approve' | 'reject') {
+    if (!token) {
+      setError('Admin-Sitzung ist nicht geladen.');
+      return;
+    }
+
     setError('');
     setMessage('');
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${backendUrl}/api/admin/change-requests/${id}/${decision}`, {
-        body: decision === 'reject' ? JSON.stringify({ note: 'Vom Admin abgelehnt.' }) : undefined,
-        headers,
-        method: 'POST',
-      });
+      const response = await reviewChangeRequest({ token }, id, decision);
 
       if (!response.ok) {
         throw new Error(await readApiError(response));
@@ -345,7 +253,7 @@ export default function AdminScreen() {
               <TextInput autoCapitalize="none" keyboardType="email-address" placeholder="E-Mail" placeholderTextColor="#98A2B3" style={styles.input} value={userForm.email} onChangeText={(email) => setUserForm((current) => ({ ...current, email }))} />
               <TextInput placeholder={selectedUserId ? 'Neues Passwort optional' : 'Passwort'} placeholderTextColor="#98A2B3" secureTextEntry style={styles.input} value={userForm.password} onChangeText={(password) => setUserForm((current) => ({ ...current, password }))} />
 
-              <RoleComboBox value={userForm.role} onChange={(role) => setUserForm((current) => ({ ...current, role }))} />
+              <AdminRoleComboBox value={userForm.role} onChange={(role) => setUserForm((current) => ({ ...current, role }))} />
 
               <Pressable disabled={isLoading} style={[styles.button, isLoading && styles.buttonDisabled]} onPress={submitUser}>
                 <MaterialIcons name={selectedUserId ? 'save' : 'person-add'} size={21} color="#FFFFFF" />

@@ -1,14 +1,21 @@
 import { normalizeEmail, normalizeRole } from "../auth/auth.service";
 import { normalizeAction, normalizeEntity } from "../../shared/domain-data";
 import { badRequest } from "../../shared/http/http-error";
+import { normalizePublicKeyJson } from "../../shared/public-key";
 import { numericId, objectPayload, optionalNullableString, optionalString, requiredPassword, requiredString } from "../../shared/validation";
 
 export function parseCreateAdminUserBody(body: Record<string, unknown>) {
+  const publicKeyJson = normalizePublicKeyJson(body.publicKeyJson);
+
+  if (body.publicKeyJson && !publicKeyJson) {
+    throw badRequest("A valid public key is required.");
+  }
+
   return {
     email: normalizeEmail(requiredString(body.email, "Email")),
     name: requiredString(body.name, "Name"),
     password: requiredPassword(body.password),
-    publicKeyJson: optionalNullableString(body.publicKeyJson),
+    publicKeyJson,
     role: normalizeRole(body.role),
   };
 }

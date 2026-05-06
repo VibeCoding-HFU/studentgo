@@ -1,6 +1,7 @@
 import { Express } from "express";
 import { prisma } from "../../prisma";
 import {
+  bearerTokenFromRequest,
   canUseRole,
   confirmPendingAccount,
   createPendingAccount,
@@ -13,19 +14,26 @@ import {
   normalizeName,
   normalizeRole,
   publicUser,
+  requireSessionValue,
   verifyPassword,
 } from "./auth.service";
+import { normalizePublicKeyJson } from "../../shared/public-key";
 
 export function registerAuthRoutes(app: Express) {
   app.post("/api/auth/register", async (request, response) => {
     const name = normalizeName(request.body.name);
     const email = normalizeEmail(request.body.email);
     const password = typeof request.body.password === "string" ? request.body.password : "";
-    const publicKeyJson = typeof request.body.publicKeyJson === "string" ? request.body.publicKeyJson : null;
+    const publicKeyJson = normalizePublicKeyJson(request.body.publicKeyJson);
     const role = normalizeRole(request.body.role);
 
     if (!name || !email || password.length < 8) {
       response.status(400).json({ error: "Name, email and a password with at least 8 characters are required." });
+      return;
+    }
+
+    if (request.body.publicKeyJson && !publicKeyJson) {
+      response.status(400).json({ error: "A valid public key is required." });
       return;
     }
 
@@ -101,19 +109,13 @@ export function registerAuthRoutes(app: Express) {
   });
 
   app.get("/api/auth/me", async (request, response) => {
-    const session = await getSession(request);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
+    const session = await requireSessionValue(request);
 
     response.json({ activeRole: session.activeRole, user: publicUser(session.user) });
   });
 
   app.post("/api/auth/logout", async (request, response) => {
-    const authorization = request.header("authorization");
-    const token = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+    const token = bearerTokenFromRequest(request);
 
     if (token) {
       await prisma.session.deleteMany({ where: { tokenHash: hashSessionToken(token) } });
@@ -123,16 +125,11 @@ export function registerAuthRoutes(app: Express) {
   });
 
   app.get("/api/users/search", async (request, response) => {
-    const session = await getSession(request);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
+    const session = await requireSessionValue(request);
 
     const query = typeof request.query.q === "string" ? request.query.q.trim() : "";
 
-    if (query.length < 2) {
+    if (query.length < 3) {
       response.json([]);
       return;
     }
@@ -161,15 +158,15 @@ export function registerAuthRoutes(app: Express) {
 
   app.patch("/api/account/public-key", async (request, response) => {
     const session = await getSession(request);
-    const publicKeyJson = typeof request.body.publicKeyJson === "string" ? request.body.publicKeyJson : "";
+    const publicKeyJson = normalizePublicKeyJson(request.body.publicKeyJson);
 
     if (!session) {
       response.status(401).json({ error: "Not authenticated." });
       return;
     }
 
-    if (!publicKeyJson.trim()) {
-      response.status(400).json({ error: "Public key is required." });
+    if (!publicKeyJson) {
+      response.status(400).json({ error: "A valid public key is required." });
       return;
     }
 

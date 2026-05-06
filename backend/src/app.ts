@@ -19,6 +19,11 @@ const authRateLimit = createRateLimit({
   limit: Number(process.env.AUTH_RATE_LIMIT ?? 20),
   windowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000),
 });
+const userSearchRateLimit = createRateLimit({
+  keyPrefix: "user-search",
+  limit: Number(process.env.USER_SEARCH_RATE_LIMIT ?? 60),
+  windowMs: Number(process.env.USER_SEARCH_RATE_LIMIT_WINDOW_MS ?? 15 * 60 * 1000),
+});
 
 app.use(securityHeaders);
 app.use(cors({ origin: configuredCorsOrigin() }));
@@ -29,6 +34,7 @@ app.get("/health", (_request, response) => {
 });
 
 app.use(["/api/auth/login", "/api/auth/register", "/api/auth/confirm"], authRateLimit);
+app.use("/api/users/search", userSearchRateLimit);
 
 registerAuthRoutes(app);
 registerAdminRoutes(app);

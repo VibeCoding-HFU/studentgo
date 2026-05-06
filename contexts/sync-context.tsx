@@ -1,9 +1,11 @@
+import { useAuth } from '@/contexts/auth-context';
 import { getOfflineValue, setOfflineValue } from '@/lib/offline-storage';
 import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 export type SyncKind = 'contact' | 'lesson' | 'todo';
 
 export type SyncQueueItem = {
+  authUserId: number | null;
   body: string;
   createdAt: string;
   headers: [string, string][];
@@ -15,7 +17,7 @@ export type SyncQueueItem = {
 };
 
 type SyncContextValue = {
-  enqueueCreate: (item: Omit<SyncQueueItem, 'createdAt' | 'id' | 'method'>) => Promise<SyncQueueItem>;
+  enqueueCreate: (item: Omit<SyncQueueItem, 'authUserId' | 'createdAt' | 'id' | 'method'>) => Promise<SyncQueueItem>;
   pendingCount: number;
   pendingItems: SyncQueueItem[];
   syncVersion: number;
@@ -34,7 +36,20 @@ async function loadQueue() {
   }
 
   try {
-    return JSON.parse(stored) as SyncQueueItem[];
+    const items = JSON.parse(stored) as Array<Partial<SyncQueueItem>>;
+    return items
+      .filter((item): item is SyncQueueItem => (
+        typeof item.body === 'string'
+        && Array.isArray(item.headers)
+        && typeof item.id === 'string'
+        && typeof item.kind === 'string'
+        && typeof item.url === 'string'
+      ))
+      .map((item) => ({
+        ...item,
+        authUserId: typeof item.authUserId === 'number' ? item.authUserId : null,
+        headers: withoutPersistedAuth(item.headers),
+      }));
   } catch {
     return [];
   }
@@ -44,7 +59,12 @@ async function saveQueue(items: SyncQueueItem[]) {
   await setOfflineValue(queueKey, JSON.stringify(items));
 }
 
+function withoutPersistedAuth(headers: [string, string][]) {
+  return headers.filter(([name]) => name.toLowerCase() !== 'authorization');
+}
+
 export function SyncProvider({ children }: PropsWithChildren) {
+  const { token, user } = useAuth();
   const [pendingItems, setPendingItems] = useState<SyncQueueItem[]>([]);
   const [syncing, setSyncing] = useState(false);
   const syncingRef = useRef(false);
@@ -66,10 +86,12 @@ export function SyncProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
-  const enqueueCreate = useCallback(async (input: Omit<SyncQueueItem, 'createdAt' | 'id' | 'method'>) => {
+  const enqueueCreate = useCallback(async (input: Omit<SyncQueueItem, 'authUserId' | 'createdAt' | 'id' | 'method'>) => {
     const item: SyncQueueItem = {
       ...input,
+      authUserId: user?.id ?? null,
       createdAt: new Date().toISOString(),
+      headers: withoutPersistedAuth(input.headers),
       id: `${input.kind}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
       method: 'POST',
     };
@@ -81,10 +103,10 @@ export function SyncProvider({ children }: PropsWithChildren) {
     });
 
     return item;
-  }, []);
+  }, [user?.id]);
 
   const flushQueue = useCallback(async () => {
-    if (!hydrated || syncingRef.current || pendingItems.length === 0) {
+    if (!hydrated || syncingRef.current || pendingItems.length === 0 || !token) {
       return;
     }
 
@@ -96,11 +118,16 @@ export function SyncProvider({ children }: PropsWithChildren) {
       let syncedAny = false;
 
       for (const item of pendingItems) {
+        if (item.authUserId !== (user?.id ?? null)) {
+          continue;
+        }
+
         try {
           const response = await fetch(item.url, {
             body: item.body,
             headers: {
               ...Object.fromEntries(item.headers),
+              Authorization: `Bearer ${token}`,
               'X-StudentGo-Sync-Replay': '1',
             },
             method: item.method,
@@ -126,7 +153,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       syncingRef.current = false;
       setSyncing(false);
     }
-  }, [hydrated, pendingItems]);
+  }, [hydrated, pendingItems, token, user?.id]);
 
   useEffect(() => {
     flushQueue();

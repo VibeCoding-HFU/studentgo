@@ -9,18 +9,9 @@ import { getBackendUrl } from '@/constants/api';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 import { useSync } from '@/contexts/sync-context';
+import { createContact, fetchContacts } from './api';
 import { baseStyles } from './styles';
-
-type Contact = {
-  email: string;
-  id: number;
-  name: string;
-  ownerId?: number | null;
-  phone?: string | null;
-  role: string;
-  room?: string | null;
-  syncState?: 'pending' | 'synced';
-};
+import type { Contact } from './types';
 
 const emptyForm = { email: '', name: '', phone: '', role: '', room: '' };
 
@@ -36,14 +27,12 @@ export default function ContactsScreen() {
   const [error, setError] = useState('');
 
   const loadContacts = useCallback(async () => {
-    const response = await fetch(`${backendUrl}/api/contacts`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
+    const nextContacts = await fetchContacts(token).catch(() => null);
 
-    if (response.ok) {
-      setContacts(((await response.json()) as Contact[]).map((contact) => ({ ...contact, syncState: 'synced' })));
+    if (nextContacts) {
+      setContacts(nextContacts.map((contact) => ({ ...contact, syncState: 'synced' })));
     }
-  }, [backendUrl, token]);
+  }, [token]);
 
   useEffect(() => {
     loadContacts();
@@ -84,11 +73,7 @@ export default function ContactsScreen() {
     };
 
     try {
-      const response = await fetch(`${backendUrl}/api/contacts`, {
-        body: JSON.stringify(form),
-        headers,
-        method: 'POST',
-      });
+      const response = await createContact(token, form);
 
       if (!response.ok) {
         setError('Kontakt konnte nicht gespeichert werden.');

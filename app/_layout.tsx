@@ -30,15 +30,15 @@ function RootNavigator() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <OfflineProvider>
-        <SyncProvider>
-          <AuthProvider>
+        <AuthProvider>
+          <SyncProvider>
             <Stack>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
             </Stack>
             <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-          </AuthProvider>
-        </SyncProvider>
+          </SyncProvider>
+        </AuthProvider>
       </OfflineProvider>
     </ThemeProvider>
   );

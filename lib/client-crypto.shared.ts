@@ -41,6 +41,10 @@ export function storageKey(email: string) {
 
 const privateKeyMemoryStore = new Map<string, string[]>();
 
+function privateKeyStorage() {
+  return globalThis.sessionStorage;
+}
+
 export function bytesToBase64(bytes: Uint8Array) {
   let binary = '';
   bytes.forEach((byte) => {
@@ -174,10 +178,11 @@ export async function savePrivateKey(email: string, privateKeyJson: string) {
   let storedValue: string | null = null;
 
   try {
-    storedValue = globalThis.localStorage?.getItem(key) ?? null;
-    globalThis.localStorage?.setItem(key, addPrivateKeyToValue(storedValue, privateKeyJson));
+    storedValue = privateKeyStorage()?.getItem(key) ?? globalThis.localStorage?.getItem(key) ?? null;
+    privateKeyStorage()?.setItem(key, addPrivateKeyToValue(storedValue, privateKeyJson));
+    globalThis.localStorage?.removeItem(key);
   } catch {
-    // Native builds may not provide localStorage; the in-memory store keeps the active frontend usable.
+    // Native builds may not provide browser storage; the in-memory store keeps the active frontend usable.
   }
 
   rememberPrivateKey(email, privateKeyJson);
@@ -192,10 +197,13 @@ export async function getPrivateKeys(email: string) {
   const key = storageKey(email);
 
   try {
-    const storedKeys = privateKeyJsonsFromValue(globalThis.localStorage?.getItem(key) ?? null);
+    const storedValue = privateKeyStorage()?.getItem(key) ?? globalThis.localStorage?.getItem(key) ?? null;
+    const storedKeys = privateKeyJsonsFromValue(storedValue);
 
     if (storedKeys.length > 0) {
       storedKeys.forEach((privateKeyJson) => rememberPrivateKey(email, privateKeyJson));
+      privateKeyStorage()?.setItem(key, JSON.stringify(storedKeys));
+      globalThis.localStorage?.removeItem(key);
       return storedKeys;
     }
 

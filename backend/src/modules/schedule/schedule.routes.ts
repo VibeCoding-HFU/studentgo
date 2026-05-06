@@ -1,10 +1,12 @@
 import { Express } from "express";
-import { getSession, normalizeEmail } from "../auth/auth.service";
+import { getSession, requireSessionValue } from "../auth/auth.service";
 import { prisma } from "../../prisma";
 import { getOrCreateScheduleDay } from "../../shared/db-helpers";
 import { endOfWeek, parseDateInput, parseMonthStart, parseWeekStart, toDateInput } from "../../shared/date-utils";
 import { lessonData } from "../../shared/domain-data";
 import { getStarPlanOptions, importStarPlanSchedule, loadStarPlanMonth } from "./schedule-imports";
+import { parseCourseImportPayload, parseImportPayload, parseInvitationId, parseInvitees, parseLessonId, parseModulePreferenceBody, parseVisitBody } from "./schedule.schemas";
+import { ensureVisibleLesson, findEditableLesson, findInvitees } from "./schedule.service";
 import { lessonModuleKey } from "./schedule-utils";
 
 function dateForScheduleDay(weekStart: Date, dayName: string) {
@@ -123,21 +125,12 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.post("/api/schedule/import-courses", async (request, response) => {
-    const session = await getSession(request);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
+    const session = await requireSessionValue(request);
+    const payload = parseImportPayload(request.body);
 
     const monthImport = await loadStarPlanMonth({
-      facultyId: String(request.body.facultyId ?? ""),
-      facultyName: String(request.body.facultyName ?? ""),
+      ...payload,
       monthStart: parseMonthStart(request.body.monthStart ?? request.body.weekStart),
-      semesterId: String(request.body.semesterId ?? ""),
-      semesterName: String(request.body.semesterName ?? ""),
-      specialization: typeof request.body.specialization === "string" ? request.body.specialization : null,
-      studyGroup: String(request.body.studyGroup ?? ""),
       userId: session.userId,
     });
     const courses = [...new Map(monthImport.lessons.map((lesson) => [lesson.title, lesson])).entries()]
@@ -155,22 +148,12 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.post("/api/schedule/import", async (request, response) => {
-    const session = await getSession(request);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
+    const session = await requireSessionValue(request);
+    const payload = parseImportPayload(request.body);
     const monthStart = parseMonthStart(request.body.monthStart ?? request.body.weekStart);
     const result = await importStarPlanSchedule({
-      facultyId: String(request.body.facultyId ?? ""),
-      facultyName: String(request.body.facultyName ?? ""),
+      ...payload,
       monthStart,
-      semesterId: String(request.body.semesterId ?? ""),
-      semesterName: String(request.body.semesterName ?? ""),
-      specialization: typeof request.body.specialization === "string" ? request.body.specialization : null,
-      studyGroup: String(request.body.studyGroup ?? ""),
       userId: session.userId,
       replaceMonth: true,
     });
@@ -184,28 +167,12 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.post("/api/schedule/import-course", async (request, response) => {
-    const session = await getSession(request);
-    const courseTitle = typeof request.body.courseTitle === "string" ? request.body.courseTitle.trim() : "";
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
-    if (!courseTitle) {
-      response.status(400).json({ error: "Course title is required." });
-      return;
-    }
+    const session = await requireSessionValue(request);
+    const payload = parseCourseImportPayload(request.body);
 
     const result = await importStarPlanSchedule({
-      courseTitle,
-      facultyId: String(request.body.facultyId ?? ""),
-      facultyName: String(request.body.facultyName ?? ""),
+      ...payload,
       monthStart: parseMonthStart(request.body.monthStart ?? request.body.weekStart),
-      semesterId: String(request.body.semesterId ?? ""),
-      semesterName: String(request.body.semesterName ?? ""),
-      specialization: typeof request.body.specialization === "string" ? request.body.specialization : null,
-      studyGroup: String(request.body.studyGroup ?? ""),
       userId: session.userId,
     });
 
@@ -218,35 +185,11 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.post("/api/schedule/lessons", async (request, response) => {
-    const session = await getSession(request);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
+    const session = await requireSessionValue(request);
 
     const day = await getOrCreateScheduleDay(typeof request.body.day === "string" ? request.body.day : "Allgemein");
-    const inviteeIds = Array.isArray(request.body.inviteeIds)
-      ? request.body.inviteeIds.map(Number).filter((id: number) => !Number.isNaN(id) && id !== session.userId)
-      : [];
-    const inviteeEmails = Array.isArray(request.body.inviteeEmails)
-      ? request.body.inviteeEmails.map(normalizeEmail).filter(Boolean)
-      : [];
-    const encryptedInvitations = Array.isArray(request.body.encryptedInvitations)
-      ? request.body.encryptedInvitations as Array<Record<string, unknown>>
-      : [];
-    const invitees = inviteeIds.length || inviteeEmails.length
-      ? await prisma.user.findMany({
-          select: { id: true },
-          where: {
-            id: { not: session.userId },
-            OR: [
-              ...(inviteeIds.length ? [{ id: { in: inviteeIds } }] : []),
-              ...(inviteeEmails.length ? [{ email: { in: inviteeEmails } }] : []),
-            ],
-          },
-        })
-      : [];
+    const { encryptedInvitations, inviteeEmails, inviteeIds } = parseInvitees(request.body, session.userId);
+    const invitees = await findInvitees({ currentUserId: session.userId, inviteeEmails, inviteeIds });
 
     const lesson = await prisma.$transaction(async (transaction) => {
       const createdLesson = await transaction.lesson.create({
@@ -267,7 +210,7 @@ export function registerScheduleRoutes(app: Express) {
             recipientId: invitee.id,
             senderId: session.userId,
           },
-        }).catch(() => undefined);
+        });
       }
 
       return createdLesson;
@@ -277,31 +220,9 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.patch("/api/schedule/lessons/:id", async (request, response) => {
-    const session = await getSession(request);
-    const id = Number(request.params.id);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
-    if (Number.isNaN(id)) {
-      response.status(400).json({ error: "Invalid lesson id." });
-      return;
-    }
-
-    const existingLesson = await prisma.lesson.findFirst({
-      where: {
-        id,
-        ownerId: session.userId,
-        source: { not: "STARPLAN" },
-      },
-    });
-
-    if (!existingLesson) {
-      response.status(404).json({ error: "Lesson not found." });
-      return;
-    }
+    const session = await requireSessionValue(request);
+    const id = parseLessonId(request.params);
+    await findEditableLesson(session, id);
 
     const day = await getOrCreateScheduleDay(typeof request.body.day === "string" ? request.body.day : "Allgemein");
     const lesson = await prisma.lesson.update({
@@ -313,50 +234,18 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.delete("/api/schedule/lessons/:id", async (request, response) => {
-    const session = await getSession(request);
-    const id = Number(request.params.id);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
-    if (Number.isNaN(id)) {
-      response.status(400).json({ error: "Invalid lesson id." });
-      return;
-    }
-
-    const existingLesson = await prisma.lesson.findFirst({
-      where: {
-        id,
-        ownerId: session.userId,
-        source: { not: "STARPLAN" },
-      },
-    });
-
-    if (!existingLesson) {
-      response.status(404).json({ error: "Lesson not found." });
-      return;
-    }
+    const session = await requireSessionValue(request);
+    const id = parseLessonId(request.params);
+    await findEditableLesson(session, id);
 
     await prisma.lesson.delete({ where: { id } });
     response.status(204).send();
   });
 
   app.post("/api/schedule/lessons/:id/visit", async (request, response) => {
-    const session = await getSession(request);
-    const id = Number(request.params.id);
-    const date = typeof request.body.date === "string" ? parseDateInput(request.body.date) : new Date("");
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
-    if (Number.isNaN(id) || Number.isNaN(date.getTime())) {
-      response.status(400).json({ error: "Lesson id and date are required." });
-      return;
-    }
+    const session = await requireSessionValue(request);
+    const { date, id } = parseVisitBody(request.params, request.body, parseDateInput);
+    await ensureVisibleLesson(session, id);
 
     const existingVisit = await prisma.lessonVisit.findUnique({
       where: {
@@ -385,19 +274,8 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.patch("/api/schedule/module-preferences", async (request, response) => {
-    const session = await getSession(request);
-    const moduleKey = typeof request.body.moduleKey === "string" ? request.body.moduleKey.trim() : "";
-    const isActive = request.body.isActive === true;
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
-    if (!moduleKey) {
-      response.status(400).json({ error: "Module key is required." });
-      return;
-    }
+    const session = await requireSessionValue(request);
+    const { isActive, moduleKey } = parseModulePreferenceBody(request.body);
 
     const preference = await prisma.lessonModulePreference.upsert({
       create: {
@@ -418,12 +296,7 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.get("/api/schedule/invitations", async (request, response) => {
-    const session = await getSession(request);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
+    const session = await requireSessionValue(request);
 
     const invitations = await prisma.lessonInvitation.findMany({
       include: {
@@ -446,18 +319,8 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.post("/api/schedule/invitations/:id/accept", async (request, response) => {
-    const session = await getSession(request);
-    const id = Number(request.params.id);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
-    if (Number.isNaN(id)) {
-      response.status(400).json({ error: "Invalid invitation id." });
-      return;
-    }
+    const session = await requireSessionValue(request);
+    const id = parseInvitationId(request.params);
 
     const invitation = await prisma.lessonInvitation.findFirst({
       include: { lesson: true },
@@ -501,18 +364,8 @@ export function registerScheduleRoutes(app: Express) {
   });
 
   app.post("/api/schedule/invitations/:id/reject", async (request, response) => {
-    const session = await getSession(request);
-    const id = Number(request.params.id);
-
-    if (!session) {
-      response.status(401).json({ error: "Not authenticated." });
-      return;
-    }
-
-    if (Number.isNaN(id)) {
-      response.status(400).json({ error: "Invalid invitation id." });
-      return;
-    }
+    const session = await requireSessionValue(request);
+    const id = parseInvitationId(request.params);
 
     const invitation = await prisma.lessonInvitation.findFirst({
       where: {

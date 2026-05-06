@@ -2,6 +2,7 @@ import { createHash, randomBytes, scrypt, timingSafeEqual } from "crypto";
 import { NextFunction, Request, Response } from "express";
 import { promisify } from "util";
 import { prisma } from "../../prisma";
+import { forbidden, unauthorized } from "../../shared/http/http-error";
 
 const scryptAsync = promisify(scrypt);
 const SESSION_DAYS = 7;
@@ -56,6 +57,11 @@ export async function verifyPassword(password: string, storedHash: string, store
 
 export function hashSessionToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
+}
+
+export function bearerTokenFromRequest(request: Request) {
+  const authorization = request.header("authorization");
+  return authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
 }
 
 function hashConfirmationToken(token: string) {
@@ -166,25 +172,43 @@ export async function createPendingAccount(data: {
   const passwordData = await hashPassword(data.password);
   const confirmationToken = randomBytes(32).toString("base64url");
 
-  await prisma.pendingAccount.deleteMany({
-    where: {
-      email: data.email,
-      expiresAt: { lte: new Date() },
-    },
-  });
+  const pendingAccount = await prisma.$transaction(async (transaction) => {
+    await transaction.pendingAccount.deleteMany({
+      where: {
+        email: data.email,
+        expiresAt: { lte: new Date() },
+      },
+    });
 
-  const pendingAccount = await prisma.pendingAccount.create({
-    data: {
-      confirmationTokenHash: hashConfirmationToken(confirmationToken),
-      email: data.email,
-      expiresAt: createConfirmationExpiry(),
-      name: data.name,
-      passwordHash: passwordData.hash,
-      passwordSalt: passwordData.salt,
-      publicKeyJson: data.publicKeyJson ? addPublicKeyToValue(null, data.publicKeyJson) : null,
-      requestedById: data.requestedById ?? null,
-      role: data.role,
-    },
+    if (data.role === "ADMIN" && !data.requestedById) {
+      const [admins, pendingAdmins] = await Promise.all([
+        transaction.user.count({ where: { role: "ADMIN" } }),
+        transaction.pendingAccount.count({
+          where: {
+            expiresAt: { gt: new Date() },
+            role: "ADMIN",
+          },
+        }),
+      ]);
+
+      if (admins + pendingAdmins > 0) {
+        throw forbidden("Admin accounts can only be created by an admin.");
+      }
+    }
+
+    return transaction.pendingAccount.create({
+      data: {
+        confirmationTokenHash: hashConfirmationToken(confirmationToken),
+        email: data.email,
+        expiresAt: createConfirmationExpiry(),
+        name: data.name,
+        passwordHash: passwordData.hash,
+        passwordSalt: passwordData.salt,
+        publicKeyJson: data.publicKeyJson ? addPublicKeyToValue(null, data.publicKeyJson) : null,
+        requestedById: data.requestedById ?? null,
+        role: data.role,
+      },
+    });
   });
 
   await sendConfirmationEmail(data.email, confirmationToken);
@@ -246,8 +270,7 @@ export async function createSession(userId: number, activeRole: Role) {
 }
 
 export async function getSession(request: Request) {
-  const authorization = request.header("authorization");
-  const token = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+  const token = bearerTokenFromRequest(request);
 
   if (!token) {
     return null;
@@ -266,6 +289,28 @@ export async function getSession(request: Request) {
 }
 
 export type AuthSession = Awaited<ReturnType<typeof getSession>>;
+
+export async function requireSessionValue(request: Request) {
+  const session = await getSession(request);
+
+  if (!session) {
+    throw unauthorized("Not authenticated.");
+  }
+
+  return session;
+}
+
+export async function requireSession(request: Request, response: Response, next: NextFunction) {
+  const session = await getSession(request);
+
+  if (!session) {
+    response.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  response.locals.session = session;
+  next();
+}
 
 export async function requireAdmin(request: Request, response: Response, next: NextFunction) {
   const session = await getSession(request);
