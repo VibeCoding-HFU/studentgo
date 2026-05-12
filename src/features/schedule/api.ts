@@ -121,6 +121,20 @@ export async function importCourseRequest({ backendUrl, token }: AuthenticatedPa
   return (await response.json()) as { count: number; monthStart?: string };
 }
 
+export async function removeImportedCourseRequest({ backendUrl, token }: AuthenticatedParams, payload: Record<string, unknown>) {
+  const response = await fetch(`${backendUrl}/api/schedule/import-course`, {
+    body: JSON.stringify(payload),
+    headers: jsonAuthHeaders(token),
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error('remove-imported-course');
+  }
+
+  return (await response.json()) as { count: number; monthStart?: string };
+}
+
 export async function createLesson({ backendUrl, token }: AuthenticatedParams, body: Record<string, unknown>) {
   return fetch(`${backendUrl}/api/schedule/lessons`, {
     body: JSON.stringify(body),

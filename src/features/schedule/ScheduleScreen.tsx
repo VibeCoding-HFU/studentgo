@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { useSync } from '@/contexts/sync-context';
 import { encryptPayloadForPublicKeys, publicKeyJsonsFromValue } from '@/lib/client-crypto';
 import { dayNames, dayOptions, startOfMonth, startOfWeek, timeOptions, toInputDate } from '@/src/shared/utils/dates';
-import { createLesson, deleteLesson, fetchAccountStats, fetchImportCourses, fetchImportOptions, fetchInvitations, fetchMeals, fetchScheduleDays, importCourseRequest, importScheduleRequest, respondToInvitationRequest, searchUsers, setLessonVisited, setModulePreference, updateLesson } from './api';
+import { createLesson, deleteLesson, fetchAccountStats, fetchImportCourses, fetchImportOptions, fetchInvitations, fetchMeals, fetchScheduleDays, importCourseRequest, importScheduleRequest, removeImportedCourseRequest, respondToInvitationRequest, searchUsers, setLessonVisited, setModulePreference, updateLesson } from './api';
 import { createEncryptedLessonBody, decryptInvitations, decryptScheduleDays } from './crypto';
 import type { AccountStats, CourseOption, FacultyOption, ImportOptions, Invitation, Lesson, LessonForm, Meal, Option, ParsedGroup, ScheduleDay, UserOption } from './types';
 import { createEmptyForm, parseGroup, uniqueOptions } from './utils';
@@ -28,7 +28,7 @@ export function ScheduleScreen() {
   const [form, setForm] = useState(createEmptyForm);
   const [editForm, setEditForm] = useState<LessonForm>(createEmptyForm);
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
-  const [pendingLessonAction, setPendingLessonAction] = useState<'update' | 'delete' | null>(null);
+  const [pendingLessonAction, setPendingLessonAction] = useState<'update' | 'delete' | 'remove-import' | null>(null);
   const [personalFormOpen, setPersonalFormOpen] = useState(false);
   const [importPanelOpen, setImportPanelOpen] = useState(false);
   const [importMode, setImportMode] = useState<'schedule' | 'course'>('schedule');
@@ -306,6 +306,36 @@ export function ScheduleScreen() {
     await loadAccountStats();
   }
 
+  async function removeImportedCourse(lesson: Lesson) {
+    setImportError('');
+    setImportMessage('');
+
+    if (!token) {
+      setImportError('Melde dich an, um Kurse auszutragen.');
+      return;
+    }
+
+    const courseMonth = lesson.date ? startOfMonth(new Date(`${lesson.date.slice(0, 10)}T12:00:00`)) : startOfMonth(selectedDate);
+
+    try {
+      const result = await removeImportedCourseRequest({ backendUrl, token }, {
+        courseTitle: lesson.title,
+        facultyId: faculty?.id ?? '',
+        facultyName: faculty?.name ?? '',
+        monthStart: toInputDate(courseMonth),
+        semesterId: semester?.id ?? '',
+        semesterName: semester?.name ?? '',
+        specialization: specialization?.id ?? '',
+        studyGroup: selectedGroup?.importKey ?? '',
+      });
+      setImportMessage(`${lesson.title}: ${result.count} Termin${result.count === 1 ? '' : 'e'} aus dem Plan entfernt.`);
+      await loadSchedule();
+      await loadAccountStats();
+    } catch {
+      setImportError('Kurs konnte nicht ausgetragen werden.');
+    }
+  }
+
   async function addLesson() {
     setFormError('');
     setFormMessage('');
@@ -420,7 +450,7 @@ export function ScheduleScreen() {
   }
 
   function closeLessonDialog() {
-    if (pendingLessonAction === 'delete') {
+    if (pendingLessonAction === 'delete' || pendingLessonAction === 'remove-import') {
       setEditingLesson(null);
     }
     setPendingLessonAction(null);
@@ -589,6 +619,7 @@ export function ScheduleScreen() {
     personalFormOpen,
     requestsOpen,
     respondToInvitation,
+    removeImportedCourse,
     selectedDate,
     selectDate,
     selectedDay,

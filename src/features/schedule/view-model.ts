@@ -37,10 +37,11 @@ export type ScheduleViewModel = {
   isCourseLoading: boolean;
   loadImportCourses: () => Promise<void>;
   options: ImportOptions;
-  pendingLessonAction: 'update' | 'delete' | null;
+  pendingLessonAction: 'update' | 'delete' | 'remove-import' | null;
   personalFormOpen: boolean;
   requestsOpen: boolean;
   respondToInvitation: (id: number, decision: 'accept' | 'reject') => Promise<void>;
+  removeImportedCourse: (lesson: Lesson) => Promise<void>;
   selectedDate: Date;
   selectDate: (date: Date) => void;
   selectedDay: string;
@@ -64,7 +65,7 @@ export type ScheduleViewModel = {
   setImportMode: Dispatch<SetStateAction<'schedule' | 'course'>>;
   setImportPanelOpen: Dispatch<SetStateAction<boolean>>;
   setInvitees: Dispatch<SetStateAction<UserOption[]>>;
-  setPendingLessonAction: Dispatch<SetStateAction<'update' | 'delete' | null>>;
+  setPendingLessonAction: Dispatch<SetStateAction<'update' | 'delete' | 'remove-import' | null>>;
   setPersonalFormOpen: Dispatch<SetStateAction<boolean>>;
   setRequestsOpen: Dispatch<SetStateAction<boolean>>;
   setSemester: Dispatch<SetStateAction<Option | null>>;

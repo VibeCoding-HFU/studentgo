@@ -1,5 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Pressable, Text, View } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 
 import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
@@ -8,12 +9,22 @@ import { baseStyles } from '../../styles';
 import { mealLabel, mealTitle } from '../../utils';
 import type { ScheduleViewModel } from '../../view-model';
 
+function RemoveFromPlanIcon({ color }: { color: string }) {
+  return (
+    <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 4h6M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13" stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} />
+    </Svg>
+  );
+}
+
 export function TodayOverviewPanel({ model }: { model: ScheduleViewModel }) {
   const styles = useThemedStyles(baseStyles);
   const {
     accountStats,
     canEditLesson,
     selectedDate,
+    importError,
+    importMessage,
     selectDate,
     selectedDay,
     selectedIsToday,
@@ -48,6 +59,8 @@ export function TodayOverviewPanel({ model }: { model: ScheduleViewModel }) {
           </View>
         </View>
       ) : null}
+      {importMessage ? <Text style={styles.success}>{importMessage}</Text> : null}
+      {importError ? <Text style={styles.error}>{importError}</Text> : null}
 
       <View style={[styles.todayCard, selectedIsToday && styles.todayCardActive]}>
         <View style={styles.dayNav}>
@@ -75,6 +88,18 @@ export function TodayOverviewPanel({ model }: { model: ScheduleViewModel }) {
           {selectedLessons.length === 0 ? <Text style={styles.empty}>Keine Termine fuer diesen Tag.</Text> : null}
           {selectedLessons.map((lesson) => (
             <View key={lesson.id} style={[styles.todayLessonCard, canEditLesson(lesson) && styles.editableLessonCard, lesson.isModuleActive === false && styles.inactiveLessonCard]}>
+              {lesson.source === 'STARPLAN' && lesson.syncState !== 'pending' ? (
+                <Pressable
+                  accessibilityLabel={`${lesson.title} aus dem Plan entfernen`}
+                  hitSlop={8}
+                  style={styles.lessonRemoveIconButton}
+                  onPress={() => {
+                    setEditingLesson(lesson);
+                    setPendingLessonAction('remove-import');
+                  }}>
+                  <RemoveFromPlanIcon color="#B42318" />
+                </Pressable>
+              ) : null}
               <Text style={styles.lessonTime}>{lesson.startTime} - {lesson.endTime}</Text>
               <View style={styles.lessonHeader}>
                 <View style={[styles.syncDot, lesson.syncState === 'pending' ? styles.syncDotPending : styles.syncDotDone]} />

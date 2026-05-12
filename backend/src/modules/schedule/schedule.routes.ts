@@ -2,7 +2,7 @@ import { Express } from "express";
 import { getSession, requireSessionValue } from "../auth/auth.service";
 import { prisma } from "../../prisma";
 import { getOrCreateScheduleDay } from "../../shared/db-helpers";
-import { endOfWeek, parseDateInput, parseMonthStart, parseWeekStart, toDateInput } from "../../shared/date-utils";
+import { endOfMonth, endOfWeek, parseDateInput, parseMonthStart, parseWeekStart, toDateInput } from "../../shared/date-utils";
 import { lessonData } from "../../shared/domain-data";
 import { getStarPlanOptions, importStarPlanSchedule, loadStarPlanMonth } from "./schedule-imports";
 import { parseCourseImportPayload, parseImportPayload, parseInvitationId, parseInvitees, parseLessonId, parseModulePreferenceBody, parseVisitBody } from "./schedule.schemas";
@@ -181,6 +181,29 @@ export function registerScheduleRoutes(app: Express) {
       lessons: result.lessons,
       monthEnd: result.monthEnd,
       monthStart: result.monthStart,
+    });
+  });
+
+  app.delete("/api/schedule/import-course", async (request, response) => {
+    const session = await requireSessionValue(request);
+    const payload = parseCourseImportPayload(request.body);
+    const monthStart = parseMonthStart(request.body.monthStart ?? request.body.weekStart);
+    const monthEnd = endOfMonth(monthStart);
+
+    const result = await prisma.lesson.updateMany({
+      data: { source: "STARPLAN_ARCHIVE" },
+      where: {
+        date: { gte: monthStart, lt: monthEnd },
+        ownerId: session.userId,
+        source: "STARPLAN",
+        title: payload.courseTitle,
+      },
+    });
+
+    response.json({
+      count: result.count,
+      monthEnd,
+      monthStart,
     });
   });
 
