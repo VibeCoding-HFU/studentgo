@@ -1,0 +1,43 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+package "app/" {
+  [Tabs: index, contacts, deadlines, account, manager, admin]
+}
+package "contexts/" {
+  [auth-context]
+  [offline-context]
+  [sync-context]
+  [theme-preference-context]
+}
+package "lib/" {
+  [client-crypto]
+  [offline-storage]
+  [auth-session-storage]
+}
+package "backend/src/" {
+  [server.ts]
+  [prisma.ts]
+}
+package "prisma/" {
+  [schema.prisma]
+  [seed.ts]
+  [migrations]
+}
+package "components/" {
+  [themed components]
+  [status badges]
+  [swipeable tab view]
+}
+
+[Tabs: index, contacts, deadlines, account, manager, admin] --> [auth-context]
+[Tabs: index, contacts, deadlines, account, manager, admin] --> [sync-context]
+[Tabs: index, contacts, deadlines, account, manager, admin] --> [client-crypto]
+[offline-context] --> [offline-storage]
+[auth-context] --> [auth-session-storage]
+[server.ts] --> [prisma.ts]
+[prisma.ts] --> [schema.prisma]
+[seed.ts] --> [schema.prisma]
+[Tabs: index, contacts, deadlines, account, manager, admin] --> [themed components]
+@enduml

@@ -1,0 +1,351 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[ngerman]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+
+\geometry{margin=24mm}
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black}
+\setlist[itemize]{leftmargin=*,itemsep=2pt}
+\setlist[enumerate]{leftmargin=*,itemsep=2pt}
+\renewcommand{\arraystretch}{1.18}
+
+\definecolor{brand}{HTML}{00684F}
+\definecolor{accent}{HTML}{C11574}
+\definecolor{soft}{HTML}{F5F7FB}
+\definecolor{line}{HTML}{D0D5DD}
+\definecolor{textmuted}{HTML}{475467}
+
+\lstdefinelanguage{PlantUML}{
+  morekeywords={@startuml,@enduml,actor,participant,database,cloud,node,artifact,package,rectangle,usecase,entity,skinparam,hide,left,to,right,direction,start,stop,if,then,else,endif,repeat,while},
+  sensitive=false,
+  morecomment=[l]{'},
+}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{brand}\bfseries,
+  commentstyle=\color{textmuted},
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{line},
+  columns=fullflexible
+}
+
+\newcommand{\docTitle}{Anforderungsspezifikation StudentGo}
+\newcommand{\version}{1.0}
+\newcommand{\status}{Entwurf}
+\newcommand{\product}{StudentGo}
+
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\priority}[1]{\textbf{#1}}
+\newcommand{\must}{\priority{Muss}}
+\newcommand{\should}{\priority{Soll}}
+\newcommand{\could}{\priority{Kann}}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{18mm}
+  {\Huge\bfseries \docTitle\par}
+  \vspace{8mm}
+  {\Large Mobile Campus-App fuer Studierende der HFU\par}
+  \vfill
+  \begin{tabular}{ll}
+    Produkt & \product\\
+    Version & \version\\
+    Status & \status\\
+    Datum & \today\\
+    Bezug & Expo/React Native App mit Express/Prisma Backend
+  \end{tabular}
+  \vfill
+  {\color{brand}\rule{0.7\textwidth}{1.2pt}}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Zweck und Geltungsbereich}
+Diese Anforderungsspezifikation beschreibt die fachlichen und technischen Anforderungen an \product. Die App buendelt studienrelevante Alltagsfunktionen: Stundenplan, Mensa, Kontakte, To-dos, private Notizen, Rollenverwaltung und kontrollierte Inhaltsaenderungen. Sie basiert auf der bestehenden Codebasis mit Expo Router, React Native, Express, Prisma und SQLite.
+
+\subsection{Ziele}
+\begin{itemize}
+  \item Studierende erhalten einen kompakten, mobilen Zugriff auf persoenliche und oeffentliche Campus-Informationen.
+  \item Managerinnen und Manager koennen Aenderungen fuer verwaltete Inhalte vorbereiten, ohne direkt produktive Daten zu ueberschreiben.
+  \item Administratorinnen und Administratoren pruefen Antraege, verwalten Benutzer und importieren externe Datenquellen.
+  \item Kerninformationen bleiben im Offline-Fall lesbar; neue persoenliche Eintraege werden nach Verbindungswiederkehr synchronisiert.
+\end{itemize}
+
+\subsection{Systemkontext}
+\product{} besteht aus einer mobilen bzw. webbasierten Expo-App, einem Express-Backend und einer SQLite-Datenbank. Externe Systeme sind der HFU-StarPlan fuer Stundenplandaten und der SWFR-Speiseplan fuer Mensadaten.
+
+\section{Stakeholder und Rollen}
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\toprule
+Rolle & Interesse\\
+\midrule
+Student:in & Schneller Zugriff auf Stundenplan, Aufgaben, Notizen, Kontakte, Mensa und geteilte Veranstaltungen.\\
+Manager:in & Erstellung von Aenderungsantraegen fuer Kontakte, Mensa, Lehrveranstaltungen und Studieninformationen.\\
+Administrator:in & Benutzerverwaltung, Rollensteuerung, Freigabe oder Ablehnung von Aenderungen, Importsteuerung.\\
+Backend-Betreiber:in & Sicherer und wartbarer Betrieb der API, Datenbank und Importprozesse.\\
+\bottomrule
+\end{tabularx}
+
+\section{Funktions-Master}
+\begin{longtable}{@{}p{18mm}p{35mm}p{77mm}p{18mm}@{}}
+\toprule
+ID & Funktion & Beschreibung & Prioritaet\\
+\midrule
+\endhead
+FM-01 & Registrierung und Login & Benutzer registrieren sich mit Name, E-Mail, Passwort und Rolle; Accounts werden ueber Bestaetigungstoken aktiviert. & \must\\
+FM-02 & Rollenbasierter Zugriff & Sessions enthalten eine aktive Rolle; Admin darf alle Rollen nutzen, Manager keine Admin-Rolle, User nur User. & \must\\
+FM-03 & Benutzerverwaltung & Admins legen Benutzer an, aendern Rollen, aktualisieren Accounts und loeschen Benutzer. & \must\\
+FM-04 & Aenderungsworkflow & Manager und Admins erstellen Aenderungsantraege; Admins genehmigen oder lehnen diese ab. & \must\\
+FM-05 & Kontakte & Oeffentliche und persoenliche Kontakte anzeigen, suchen und persoenliche Kontakte anlegen. & \must\\
+FM-06 & To-dos & Persoenliche To-dos mit Unteraufgaben anlegen, anzeigen und abschliessen. & \must\\
+FM-07 & Private Notizen & Studieninformationen und persoenliche Notizen anzeigen; private Inhalte koennen clientseitig verschluesselt werden. & \should\\
+FM-08 & Stundenplan & Wochenplan anzeigen, manuelle Veranstaltungen pflegen, Besuche markieren und Modul-Praeferenzen speichern. & \must\\
+FM-09 & StarPlan-Import & Importoptionen laden, Kurse auswaehlen und Veranstaltungen aus HFU-StarPlan uebernehmen. & \should\\
+FM-10 & Einladungen & Veranstaltungen mit anderen Benutzern teilen; Empfaenger koennen annehmen oder ablehnen. & \should\\
+FM-11 & Mensa & Mensen und Speiseplaene anzeigen; Admin kann SWFR-Import ausloesen. & \should\\
+FM-12 & Offline-Faehigkeit & GET-Antworten cachen, ausgewaehlte POST-Aktionen lokal vormerken und spaeter wiederholen. & \must\\
+FM-13 & Theme und Bedienung & Helles/dunkles Erscheinungsbild, Statusanzeigen und Swipe-Navigation bereitstellen. & \could\\
+\bottomrule
+\end{longtable}
+
+\section{User-Stories}
+\begin{longtable}{@{}p{18mm}p{105mm}p{26mm}@{}}
+\toprule
+ID & Story & Akzeptanzkriterien\\
+\midrule
+\endhead
+US-01 & Als Student:in moechte ich mich registrieren und bestaetigen, damit ich persoenliche Daten speichern kann. & Bestaetigungstoken wird erzeugt; vor Bestaetigung existiert nur ein PendingAccount; nach Bestaetigung ist Login moeglich.\\
+US-02 & Als Student:in moechte ich meine Kontakte durchsuchen, damit ich Personen schnell finde. & Suche filtert Name, Rolle, E-Mail und Raum; persoenliche Kontakte werden markiert.\\
+US-03 & Als Student:in moechte ich To-dos mit Unteraufgaben erfassen, damit ich Studienaufgaben strukturieren kann. & To-do wird dem Account zugeordnet; Unteraufgaben sind separat abschliessbar; erledigte Aufgaben werden erkennbar getrennt.\\
+US-04 & Als Student:in moechte ich private Notizen verschluesseln, damit sensible Inhalte nur mit meinem Private Key lesbar sind. & Public Key wird am Account gespeichert; verschluesselte Payloads enthalten Key und IV; ohne passenden Private Key wird ein Hinweis angezeigt.\\
+US-05 & Als Student:in moechte ich meinen Stundenplan importieren, damit ich ihn nicht manuell uebertragen muss. & Importoptionen werden geladen; Auswahl erzeugt Lessons und ScheduleDays; Duplikate werden anhand stabiler Modulschluessel vermieden.\\
+US-06 & Als Student:in moechte ich eine Veranstaltung teilen, damit Kommiliton:innen sie uebernehmen koennen. & Einladung referenziert Lesson, Sender und Empfaenger; Status ist initial PENDING; Annahme/Ablehnung wird gespeichert.\\
+US-07 & Als Manager:in moechte ich Aenderungen beantragen, damit fachliche Inhalte kontrolliert gepflegt werden. & Antrag enthaelt Entity, Action, Payload und optional TargetId; Status ist PENDING; eigene Antraege sind sichtbar.\\
+US-08 & Als Admin moechte ich Aenderungsantraege freigeben, damit produktive Daten erst nach Pruefung geaendert werden. & Approve wendet Payload auf Zielentitaet an; Reject speichert Review-Notiz; Status und Review-Zeitpunkt werden gesetzt.\\
+US-09 & Als Admin moechte ich Benutzerrollen verwalten, damit Verantwortlichkeiten korrekt abgebildet sind. & Rollen USER, MANAGER und ADMIN sind waehlbar; unzulaessige Rollenwechsel werden serverseitig verhindert.\\
+US-10 & Als Nutzer:in moechte ich bei Netzproblemen weiterarbeiten, damit kurze Verbindungsabbrueche mich nicht blockieren. & Cache liefert bekannte GET-Daten; lokale Creates erhalten Pending-Status; SyncContext spielt Requests spaeter ab.\\
+\bottomrule
+\end{longtable}
+
+\section{Nichtfunktionale Anforderungen}
+\begin{longtable}{@{}p{20mm}p{35mm}p{86mm}@{}}
+\toprule
+ID & Kategorie & Anforderung\\
+\midrule
+\endhead
+NF-01 & Sicherheit & Passwoerter werden mit Salt und scrypt gehasht; Sessiontokens werden nur als SHA-256 Hash gespeichert.\\
+NF-02 & Datenschutz & Private Schluessel verbleiben clientseitig; verschluesselte Inhalte werden als Payload, Key und IV gespeichert.\\
+NF-03 & Zugriffsschutz & Admin- und Manager-Endpunkte muessen serverseitig ueber Middleware geschuetzt sein.\\
+NF-04 & Offline & Cache und Queue duerfen Benutzerkontext nicht vermischen; Cache-Key beruecksichtigt URL und Authorization-Header.\\
+NF-05 & Wartbarkeit & Fachliche Modelle werden zentral in Prisma beschrieben; API und App verwenden klar benannte Module und Contexts.\\
+NF-06 & Portabilitaet & App laeuft auf Expo-Zielplattformen Android, iOS und Web; Backend laeuft lokal oder auf Node.js Hosts.\\
+NF-07 & Nachvollziehbarkeit & Aenderungsantraege speichern Ersteller, Review-Daten, Status und Payload.\\
+NF-08 & Importrobustheit & Externe Importe muessen fehlschlagen duerfen, ohne bestehende App-Funktionen zu blockieren.\\
+\bottomrule
+\end{longtable}
+
+\section{4+1 Sichtenmodell}
+\subsection{Use-Case-Sicht}
+Die Use-Case-Sicht beschreibt die wichtigsten Interaktionen zwischen Rollen und System.
+
+\begin{center}
+\begin{tikzpicture}[node distance=12mm, actor/.style={draw,rounded corners,fill=soft,minimum width=24mm,minimum height=8mm}, uc/.style={draw,ellipse,fill=white,minimum width=35mm,minimum height=9mm}, line/.style={-Latex}]
+  \node[actor] (student) {Student:in};
+  \node[actor,below=18mm of student] (manager) {Manager:in};
+  \node[actor,below=18mm of manager] (admin) {Admin};
+  \node[uc,right=28mm of student] (auth) {Auth};
+  \node[uc,below=7mm of auth] (contacts) {Kontakte};
+  \node[uc,below=7mm of contacts] (schedule) {Stundenplan};
+  \node[uc,below=7mm of schedule] (change) {Aenderungsantrag};
+  \node[uc,below=7mm of change] (review) {Review};
+  \node[uc,right=24mm of schedule] (offline) {Offline Sync};
+  \draw[line] (student) -- (auth);
+  \draw[line] (student) -- (contacts);
+  \draw[line] (student) -- (schedule);
+  \draw[line] (student) -- (offline);
+  \draw[line] (manager) -- (change);
+  \draw[line] (admin) -- (review);
+  \draw[line] (admin) -- (auth);
+  \draw[line,dashed] (change) -- (review);
+\end{tikzpicture}
+\end{center}
+
+PlantUML-Quelle: \texttt{diagrams/usecase.puml}.
+
+\subsection{Logische Sicht}
+Die logische Sicht trennt App-Kontexte, Backend-Services und Persistenz.
+
+\begin{center}
+\begin{tikzpicture}[node distance=10mm, box/.style={draw,rounded corners,fill=soft,minimum width=36mm,minimum height=9mm,align=center}, ext/.style={draw,rounded corners,fill=white,minimum width=30mm,minimum height=9mm,align=center}, line/.style={-Latex}]
+  \node[box] (tabs) {Expo Router\\Screens};
+  \node[box,below=of tabs] (contexts) {Auth, Offline,\\Sync, Theme};
+  \node[box,right=28mm of tabs] (api) {Express\\REST API};
+  \node[box,below=of api] (services) {Auth, Review,\\Import Services};
+  \node[box,right=28mm of api] (prisma) {Prisma Client};
+  \node[box,below=of prisma] (db) {SQLite};
+  \node[ext,above=of api] (starplan) {HFU StarPlan};
+  \node[ext,above=of prisma] (swfr) {SWFR};
+  \draw[line] (tabs) -- (contexts);
+  \draw[line] (tabs) -- node[above]{REST/JSON} (api);
+  \draw[line] (api) -- (services);
+  \draw[line] (api) -- (prisma);
+  \draw[line] (prisma) -- (db);
+  \draw[line] (services) -- (starplan);
+  \draw[line] (services) -- (swfr);
+\end{tikzpicture}
+\end{center}
+
+PlantUML-Quelle: \texttt{diagrams/logical-components.puml}.
+
+\subsection{Prozesssicht}
+Wichtige Laufzeitprozesse sind Login, Offline-Synchronisation, Aenderungsreview, StarPlan-Import und SWFR-Import. Die Offline-Synchronisation puffert schreibende Aktionen fuer Kontakte und To-dos, markiert sie lokal als pending und spielt sie mit Replay-Header erneut ab.
+
+\begin{center}
+\begin{tikzpicture}[node distance=9mm, procstep/.style={draw,rounded corners,fill=soft,minimum width=42mm,minimum height=8mm,align=center}, decision/.style={draw,diamond,aspect=2,fill=white,align=center}, line/.style={-Latex}]
+  \node[procstep] (create) {Aktion in App};
+  \node[decision,below=of create] (online) {Backend\\erreichbar?};
+  \node[procstep,left=18mm of online] (save) {Direkt speichern};
+  \node[procstep,right=18mm of online] (queue) {Lokal queuen};
+  \node[procstep,below=18mm of queue] (replay) {Bei Verbindung\\Replay senden};
+  \node[procstep,below=18mm of online] (reload) {Listen neu laden};
+  \draw[line] (create) -- (online);
+  \draw[line] (online) -- node[above]{ja} (save);
+  \draw[line] (online) -- node[above]{nein} (queue);
+  \draw[line] (queue) -- (replay);
+  \draw[line] (save) |- (reload);
+  \draw[line] (replay) |- (reload);
+\end{tikzpicture}
+\end{center}
+
+PlantUML-Quellen: \texttt{diagrams/process-sync.puml}, \texttt{diagrams/admin-review-sequence.puml}, \texttt{diagrams/scenario-schedule-import.puml}.
+
+\subsection{Entwicklungssicht}
+Die Entwicklungssicht folgt der vorhandenen Projektstruktur. Screens liegen in \texttt{app/(tabs)}, gemeinsam genutzte Zustandslogik in \texttt{contexts}, plattformspezifische Persistenz und Kryptografie in \texttt{lib}, Backend-Code in \texttt{backend/src} und Datenmodell/Migrationen in \texttt{prisma}.
+
+\begin{center}
+\begin{tikzpicture}[node distance=8mm, pkg/.style={draw,rounded corners,fill=soft,minimum width=35mm,minimum height=9mm,align=center}, line/.style={-Latex}]
+  \node[pkg] (app) {app/(tabs)};
+  \node[pkg,right=of app] (contexts) {contexts};
+  \node[pkg,right=of contexts] (lib) {lib};
+  \node[pkg,below=of contexts] (backend) {backend/src};
+  \node[pkg,right=of backend] (prisma) {prisma};
+  \node[pkg,left=of backend] (components) {components};
+  \draw[line] (app) -- (contexts);
+  \draw[line] (app) -- (components);
+  \draw[line] (contexts) -- (lib);
+  \draw[line] (app) -- (backend);
+  \draw[line] (backend) -- (prisma);
+\end{tikzpicture}
+\end{center}
+
+PlantUML-Quelle: \texttt{diagrams/development-view.puml}.
+
+\subsection{Physische Sicht}
+Die physische Sicht besteht aus Clientgeraet, Backend-Host, Datenbank und externen Importquellen.
+
+\begin{center}
+\begin{tikzpicture}[node distance=12mm, nodebox/.style={draw,rounded corners,fill=soft,minimum width=42mm,minimum height=13mm,align=center}, cloud/.style={draw,ellipse,fill=white,minimum width=34mm,minimum height=10mm,align=center}, line/.style={-Latex}]
+  \node[nodebox] (client) {Mobilgeraet/Web\\Expo App + Local Storage};
+  \node[nodebox,right=28mm of client] (backend) {Backend Host\\Node.js Express};
+  \node[nodebox,right=28mm of backend] (db) {SQLite\\Datenbank};
+  \node[cloud,above=of backend] (starplan) {HFU StarPlan};
+  \node[cloud,below=of backend] (swfr) {SWFR};
+  \draw[line] (client) -- node[above]{HTTPS REST} (backend);
+  \draw[line] (backend) -- (db);
+  \draw[line] (backend) -- (starplan);
+  \draw[line] (backend) -- (swfr);
+\end{tikzpicture}
+\end{center}
+
+PlantUML-Quelle: \texttt{diagrams/deployment-view.puml}.
+
+\section{Datenanforderungen}
+Das zentrale Datenmodell wird durch Prisma beschrieben. Besonders relevant sind \texttt{User}, \texttt{Session}, \texttt{PendingAccount}, \texttt{ManagementChangeRequest}, \texttt{Contact}, \texttt{Todo}, \texttt{StudyInfo}, \texttt{Lesson}, \texttt{LessonInvitation}, \texttt{Canteen} und \texttt{MealPlan}.
+
+\begin{tabularx}{\textwidth}{@{}lY@{}}
+\toprule
+Entitaet & Zweck\\
+\midrule
+User & Account, Rolle, Public Keys und Beziehungen zu persoenlichen Daten.\\
+Session & Tokenbasierte Anmeldung mit aktiver Rolle und Ablaufzeit.\\
+ManagementChangeRequest & Auditierbarer Aenderungsantrag mit Action, Entity, Payload und Review-Daten.\\
+Lesson & Einzelne oder wiederkehrende Veranstaltung inklusive Importquelle, Raum, Dozent:in und Verschluesselungsfeldern.\\
+ScheduleImportCache & Zwischenspeicher fuer importierte StarPlan-Daten pro Woche und Auswahl.\\
+StudyInfo & Oeffentliche Studieninformationen oder persoenliche, optional verschluesselte Notizen.\\
+\bottomrule
+\end{tabularx}
+
+PlantUML-Quelle: \texttt{diagrams/data-model.puml}.
+
+\section{Schnittstellen}
+\begin{longtable}{@{}p{45mm}p{82mm}p{22mm}@{}}
+\toprule
+Endpoint & Zweck & Schutz\\
+\midrule
+\endhead
+\texttt{POST /api/auth/register} & Registrierung und PendingAccount-Erzeugung. & oeffentlich\\
+\texttt{POST/GET /api/auth/confirm} & Accountbestaetigung per Token. & oeffentlich\\
+\texttt{POST /api/auth/login} & Session erzeugen. & oeffentlich\\
+\texttt{GET /api/auth/me} & Aktuellen Benutzer laden. & Token\\
+\texttt{GET/POST /api/contacts} & Kontakte lesen und persoenliche Kontakte anlegen. & optional/Token\\
+\texttt{GET/POST /api/todos} & Persoenliche To-dos lesen und anlegen. & Token\\
+\texttt{GET/POST /api/study-info} & Studieninfos und Notizen lesen/anlegen. & optional/Token\\
+\texttt{GET /api/schedule} & Stundenplan fuer Woche/Monat laden. & optional/Token\\
+\texttt{POST /api/schedule/import} & StarPlan-Veranstaltungen importieren. & Token\\
+\texttt{POST /api/schedule/lessons/:id/visit} & Besuch einer Veranstaltung markieren. & Token\\
+\texttt{GET/POST /api/manager/change-requests} & Aenderungsantraege lesen/anlegen. & Manager/Admin\\
+\texttt{GET /api/admin/users} & Benutzerliste lesen. & Admin\\
+\texttt{POST /api/admin/change-requests/:id/approve} & Antrag genehmigen. & Admin\\
+\texttt{POST /api/admin/import/swfr-meals} & Mensa-Import ausloesen. & Admin\\
+\bottomrule
+\end{longtable}
+
+\section{Abnahmekriterien}
+\begin{itemize}
+  \item Die App kann mit lokalem Backend starten und \texttt{/health} erfolgreich abfragen.
+  \item Registrierung, Bestaetigung, Login, Logout und Rollenwahl funktionieren gemaess Zugriffsmatrix.
+  \item Admin-Endpunkte sind ohne Admin-Session nicht erreichbar.
+  \item Kontakte und To-dos koennen offline vorgemerkt und nach Wiederverbindung synchronisiert werden.
+  \item StarPlan- und SWFR-Importfehler fuehren zu sichtbarer Fehlermeldung, aber nicht zum Absturz der App.
+  \item Aenderungsantraege koennen erstellt, genehmigt, abgelehnt und im Status nachvollzogen werden.
+  \item PlantUML-Quellen liegen unter \texttt{diagrams/} und koennen mit PlantUML in Diagrammartefakte uebersetzt werden.
+\end{itemize}
+
+\section{PlantUML-Integration}
+Die UML-Quellen liegen als echte PlantUML-Dateien im Ordner \texttt{diagrams/}. Damit LaTeX PlantUML direkt parsen kann, ist zusaetzlich \texttt{plantuml-latex-demo.tex} enthalten. Dieser Build nutzt das lokal installierte LaTeX-Paket \texttt{plantuml}; erforderlich sind \texttt{lualatex -shell-escape} und die Umgebungsvariable \texttt{PLANTUML\_JAR}.
+
+\begin{lstlisting}[language=bash]
+export PLANTUML_JAR=/pfad/zu/plantuml.jar
+make plantuml-latex
+\end{lstlisting}
+
+Der Standard-Build \texttt{make pdf} erzeugt diese Spezifikation ohne externes Jar. Sobald PlantUML installiert ist, erzeugt \texttt{make plantuml} zusaetzlich gerenderte Diagramme aus den \texttt{.puml}-Dateien.
+
+\appendix
+\section{PlantUML-Quellen}
+\subsection{Use-Case-Diagramm}
+\lstinputlisting[language=PlantUML]{diagrams/usecase.puml}
+\subsection{Logische Komponenten}
+\lstinputlisting[language=PlantUML]{diagrams/logical-components.puml}
+\subsection{Offline-Prozess}
+\lstinputlisting[language=PlantUML]{diagrams/process-sync.puml}
+
+\end{document}

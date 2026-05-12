@@ -1,0 +1,360 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../backend/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  USER
+  MANAGER
+  ADMIN
+}
+
+enum DataSource {
+  MANUAL
+  PERSONAL
+  SWFR
+  STARPLAN
+  STARPLAN_ARCHIVE
+  INVITATION
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  name         String
+  email        String    @unique
+  publicKeyJson String?  @ignore
+  passwordHash String
+  passwordSalt String
+  role         Role      @default(USER)
+  sessions     Session[]
+  publicKeys   UserPublicKey[]
+  changeRequests ManagementChangeRequest[]
+  contacts     Contact[]
+  studyInfos   StudyInfo[]
+  studyModules StudyModule[]
+  lessons      Lesson[]
+  todos        Todo[]
+  lessonVisits LessonVisit[]
+  lessonModulePreferences LessonModulePreference[]
+  sentLessonInvitations LessonInvitation[] @relation("LessonInvitationSender")
+  receivedLessonInvitations LessonInvitation[] @relation("LessonInvitationRecipient")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model UserPublicKey {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publicKeyJson String
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, publicKeyJson])
+  @@index([userId])
+}
+
+model Session {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique
+  activeRole Role
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PendingAccount {
+  id                    Int      @id @default(autoincrement())
+  name                  String
+  email                 String   @unique
+  publicKeyJson         String?
+  passwordHash          String
+  passwordSalt          String
+  role                  Role     @default(USER)
+  confirmationTokenHash String   @unique
+  requestedById         Int?
+  createdAt             DateTime @default(now())
+  expiresAt             DateTime
+
+  @@index([expiresAt])
+}
+
+enum ChangeAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum ChangeEntity {
+  CONTACT
+  DEADLINE
+  MEAL
+  LESSON
+  STUDY_INFO
+}
+
+enum ChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model ManagementChangeRequest {
+  id          Int          @id @default(autoincrement())
+  action      ChangeAction
+  entity      ChangeEntity
+  targetId    Int?
+  payloadJson String
+  status      ChangeStatus @default(PENDING)
+  requestedById Int
+  requestedBy   User       @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  reviewedById Int?
+  reviewedAt   DateTime?
+  reviewNote   String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([requestedById])
+  @@index([status])
+  @@index([entity, targetId])
+}
+
+model Contact {
+  id        Int      @id @default(autoincrement())
+  ownerId   Int?
+  owner     User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String
+  role      String
+  email     String
+  phone     String?
+  room      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
+model Canteen {
+  id        Int        @id @default(autoincrement())
+  name      String
+  location  String?
+  meals     MealPlan[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model MealPlan {
+  id             Int      @id @default(autoincrement())
+  canteenId      Int
+  canteen        Canteen  @relation(fields: [canteenId], references: [id], onDelete: Cascade)
+  day            String
+  date           DateTime?
+  mainDish       String
+  vegetarianDish String?
+  priceCents     Int
+  currency       String   @default("EUR")
+  isPersonal     Boolean  @default(false)
+  source         DataSource @default(MANUAL)
+  sourceKey      String?  @unique
+  importedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([canteenId])
+  @@index([date])
+  @@index([source])
+}
+
+model Deadline {
+  id          Int      @id @default(autoincrement())
+  title       String
+  date        DateTime
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([date])
+}
+
+model Todo {
+  id          Int           @id @default(autoincrement())
+  ownerId     Int
+  owner       User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  completedAt DateTime?
+  subtasks    TodoSubtask[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([ownerId])
+  @@index([completedAt])
+}
+
+model TodoSubtask {
+  id          Int       @id @default(autoincrement())
+  todoId      Int
+  todo        Todo      @relation(fields: [todoId], references: [id], onDelete: Cascade)
+  title       String
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([todoId])
+}
+
+model StudyInfo {
+  id        Int      @id @default(autoincrement())
+  ownerId   Int?
+  owner     User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  category  String
+  title     String
+  content   String
+  encryptedPayload String?
+  encryptedKey String?
+  encryptionIv String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@index([category, sortOrder])
+}
+
+model StudyModule {
+  id        Int      @id @default(autoincrement())
+  ownerId   Int?
+  owner     User?    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title     String
+  credits   String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+  @@map("Module")
+}
+
+model ScheduleDay {
+  id        Int      @id @default(autoincrement())
+  day       String   @unique
+  sortOrder Int      @default(0)
+  lessons   Lesson[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Lesson {
+  id            Int         @id @default(autoincrement())
+  ownerId       Int?
+  owner         User?       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  scheduleDayId Int
+  scheduleDay   ScheduleDay @relation(fields: [scheduleDayId], references: [id], onDelete: Cascade)
+  date          DateTime?
+  startTime     String
+  endTime       String
+  title         String
+  description   String?
+  encryptedPayload String?
+  encryptedKey     String?
+  encryptionIv     String?
+  isRecurring   Boolean     @default(false)
+  room          String?
+  lecturer      String?
+  source        DataSource  @default(MANUAL)
+  sourceKey     String?     @unique
+  importedAt    DateTime?
+  invitations   LessonInvitation[]
+  visits         LessonVisit[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([ownerId])
+  @@index([date])
+  @@index([source])
+  @@index([ownerId, date])
+  @@index([scheduleDayId])
+}
+
+model LessonVisit {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId  Int
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  date      DateTime
+  visitedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, lessonId, date])
+  @@index([lessonId])
+  @@index([userId])
+}
+
+model LessonModulePreference {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  moduleKey String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, moduleKey])
+  @@index([userId])
+}
+
+model LessonInvitation {
+  id          Int              @id @default(autoincrement())
+  lessonId    Int
+  lesson      Lesson           @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  senderId    Int
+  sender      User             @relation("LessonInvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId Int
+  recipient   User             @relation("LessonInvitationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  status      InvitationStatus @default(PENDING)
+  encryptedPayload String?
+  encryptedKey     String?
+  encryptionIv     String?
+  respondedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([lessonId, recipientId])
+  @@index([recipientId])
+  @@index([senderId])
+  @@index([status])
+}
+
+model ScheduleImportCache {
+  id           Int      @id @default(autoincrement())
+  cacheKey     String   @unique
+  facultyId    String
+  facultyName  String
+  studyGroup   String
+  semesterId   String
+  semesterName String
+  specialization String?
+  weekStart    DateTime
+  payloadJson  String
+  importedAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([weekStart])
+  @@index([importedAt])
+}

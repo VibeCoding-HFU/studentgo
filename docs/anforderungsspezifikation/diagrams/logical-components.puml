@@ -1,0 +1,46 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+package "Mobile App (Expo / React Native)" {
+  [Expo Router Tabs] as Tabs
+  [AuthContext] as Auth
+  [OfflineProvider] as Offline
+  [SyncContext] as Sync
+  [Client Crypto] as Crypto
+  [Theming] as Theme
+}
+
+package "Backend (Express)" {
+  [REST API] as Api
+  [Auth Middleware] as AuthMw
+  [Admin Review Service] as Review
+  [Schedule Import Service] as ScheduleImport
+  [Mensa Import Service] as MealImport
+}
+
+package "Persistence" {
+  database "SQLite" as DB
+  [Prisma Client] as Prisma
+}
+
+cloud "HFU StarPlan" as StarPlan
+cloud "SWFR Speiseplan" as SWFR
+
+Tabs --> Auth
+Tabs --> Sync
+Tabs --> Crypto
+Tabs --> Theme
+Offline --> Tabs : cached GET
+Sync --> Api : replay POST
+Auth --> Api : Bearer Token
+Tabs --> Api : REST/JSON
+Api --> AuthMw
+Api --> Review
+Api --> ScheduleImport
+Api --> MealImport
+Api --> Prisma
+Prisma --> DB
+ScheduleImport --> StarPlan : HTML/JSON Import
+MealImport --> SWFR : HTML Import
+@enduml

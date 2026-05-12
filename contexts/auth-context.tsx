@@ -1,0 +1,151 @@
+import { generateAccountKeyPair, savePrivateKey } from '@/lib/client-crypto';
+import { addPublicKeyToValue } from '@/lib/client-crypto.shared';
+import { getStoredAuthSession, removeAuthSession, saveAuthSession } from '@/lib/auth-session-storage';
+import { apiFetch, apiJson } from '@/src/shared/api/client';
+import { Role } from '@/src/shared/types/auth';
+import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
+
+export type { Role } from '@/src/shared/types/auth';
+
+type AuthUser = {
+  email: string;
+  id: number;
+  name: string;
+  publicKeyJson?: string | null;
+  role: Role;
+};
+
+export type AuthSession = {
+  activeRole: Role;
+  token: string;
+  user: AuthUser;
+};
+
+type AuthContextValue = {
+  activeRole: Role | null;
+  confirmRegistration: (token: string) => Promise<void>;
+  isAdminMode: boolean;
+  isManagerMode: boolean;
+  isAuthenticated: boolean;
+  login: (email: string, password: string, loginAs: Role) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (name: string, email: string, password: string, role: Role) => Promise<{ privateKeyJson: string; privateKeySaved: boolean }>;
+  session: AuthSession | null;
+  token: string | null;
+  updatePublicKey: (publicKeyJson: string) => void;
+  user: AuthUser | null;
+};
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function AuthProvider({ children }: PropsWithChildren) {
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [isSessionLoaded, setIsSessionLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSession() {
+      const storedSession = await getStoredAuthSession();
+
+      if (!cancelled) {
+        setSession(storedSession);
+        setIsSessionLoaded(true);
+      }
+    }
+
+    loadSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function authenticate(path: string, body: Record<string, unknown>) {
+    const nextSession = await apiJson<AuthSession>(path, { body, method: 'POST' });
+    setSession(nextSession);
+    await saveAuthSession(nextSession);
+  }
+
+  async function login(email: string, password: string, loginAs: Role) {
+    await authenticate('/api/auth/login', { email, loginAs, password });
+  }
+
+  async function register(name: string, email: string, password: string, role: Role) {
+    const keyPair = await generateAccountKeyPair();
+    await apiJson('/api/auth/register', {
+      body: { email, name, password, publicKeyJson: keyPair.publicKeyJson, role },
+      method: 'POST',
+    });
+
+    try {
+      await savePrivateKey(email, keyPair.privateKeyJson);
+      return { privateKeyJson: keyPair.privateKeyJson, privateKeySaved: true };
+    } catch {
+      return { privateKeyJson: keyPair.privateKeyJson, privateKeySaved: false };
+    }
+  }
+
+  async function confirmRegistration(token: string) {
+    await authenticate('/api/auth/confirm', { token });
+  }
+
+  async function logout() {
+    const token = session?.token;
+    setSession(null);
+    await removeAuthSession();
+
+    if (!token) {
+      return;
+    }
+
+    await apiFetch('/api/auth/logout', { method: 'POST', token }).catch(() => undefined);
+  }
+
+  function updatePublicKey(publicKeyJson: string) {
+    setSession((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const nextSession = {
+        ...current,
+        user: {
+          ...current.user,
+          publicKeyJson: addPublicKeyToValue(current.user.publicKeyJson, publicKeyJson),
+        },
+      };
+      saveAuthSession(nextSession).catch(() => undefined);
+      return nextSession;
+    });
+  }
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      activeRole: session?.activeRole ?? null,
+      confirmRegistration,
+      isAdminMode: session?.activeRole === 'ADMIN',
+      isManagerMode: session?.activeRole === 'ADMIN' || session?.activeRole === 'MANAGER',
+      isAuthenticated: Boolean(session) || !isSessionLoaded,
+      login,
+      logout,
+      register,
+      session,
+      token: session?.token ?? null,
+      updatePublicKey,
+      user: session?.user ?? null,
+    }),
+    [isSessionLoaded, session],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const value = useContext(AuthContext);
+
+  if (!value) {
+    throw new Error('useAuth must be used inside AuthProvider.');
+  }
+
+  return value;
+}

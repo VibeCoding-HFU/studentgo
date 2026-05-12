@@ -1,0 +1,20 @@
+\documentclass{article}
+\usepackage[output=latex]{plantuml}
+\begin{document}
+\section*{PlantUML-LaTeX-Demo}
+Diese Datei prueft, ob LaTeX PlantUML mit \texttt{lualatex -shell-escape} und \texttt{PLANTUML\_JAR} parsen kann.
+
+\begin{plantuml}
+@startuml
+actor "Student:in" as Student
+participant "StudentGo App" as App
+participant "Express API" as Api
+database "SQLite" as DB
+Student -> App : Login
+App -> Api : POST /api/auth/login
+Api -> DB : User und Session pruefen
+Api --> App : Token + User
+App --> Student : Angemeldet
+@enduml
+\end{plantuml}
+\end{document}
