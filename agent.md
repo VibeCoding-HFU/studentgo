@@ -1,90 +1,128 @@
-# Agent-Anweisungen fuer StudentGo
+# Agent Guide
 
-## Projektkontext
+This project is an Expo React Native app using TypeScript, Expo Router, React 19, and the `@/` path alias. Follow these practices when adding or changing code.
+<!-- Why: This guide gives every human and AI assistant the same baseline for making framework-compatible, team-friendly changes. -->
 
-StudentGo ist eine Expo/React-Native-App mit Expo Router, einem lokalen Express-Backend und Prisma mit SQLite. Route-Dateien unter `app/` sollen duenn bleiben und Feature-Screens aus `src/features/*` rendern. Wiederverwendbare UI- und Plattformhelfer liegen aktuell noch teils unter `components/`, `hooks/`, `contexts/`, `constants/` und `lib/`; neue fachliche App-Logik bevorzugt unter `src/features` oder `src/shared` ablegen. Backend-Code liegt unter `backend/src/`, Prisma-Schema, Seeds und Migrationen unter `prisma/`.
+## Project Shape
+<!-- Why: This section explains where different kinds of code belong so future changes follow the existing Expo Router project structure. -->
 
-## Arbeitsweise
+- Put route screens and layouts in `app/`; this app uses Expo Router file-based routing.
+- Put shared reusable UI in `components/`.
+- Put reusable hooks in `hooks/`.
+- Put design tokens, theme values, and constants in `constants/`.
+- Prefer imports through the configured `@/` alias for project files.
 
-- Lies zuerst die betroffenen Dateien und folge den vorhandenen Mustern.
-- Halte Aenderungen klein, nachvollziehbar und auf die Aufgabe begrenzt.
-- Beruehre keine bestehenden uncommitted Changes, wenn sie nicht klar zur Aufgabe gehoeren.
-- Aendere keine generierten Dateien oder Assets, ausser die Aufgabe verlangt es ausdruecklich.
-- Verwende TypeScript strikt und vermeide `any`, wenn ein lokaler Typ sinnvoll ableitbar ist.
-- Bevorzuge vorhandene Komponenten, Theme-Konstanten und Hooks gegenueber neuen Einmal-Abstraktionen.
-- Plattformunterschiede gehoeren in vorhandene `.native.ts`, `.web.ts` oder aehnliche lokale Patterns.
-- Keine generierten Ordner bearbeiten, insbesondere nicht `backend/generated/`, `dist/`, `.expo/`, `android/` oder Prisma-Client-Ausgaben. Stattdessen Schema/Quellcode anpassen und Generatoren laufen lassen.
-- Bugreports, Datenbanken, ZIPs und lokale Artefakte gehoeren nicht ins Repo. Wenn solche Dateien auftauchen, nicht anfassen ausser die Aufgabe verlangt Repo-Hygiene; dann gezielt ignorieren oder entfernen lassen.
+## Modular Platform Architecture
+<!-- Why: StudentGo should grow as a small core platform with independent frontend modules, instead of becoming a tightly coupled app where every feature reaches into every other feature. -->
 
-## Commit-Regelung
+- Treat the core app as the platform shell: routing, navigation, theming, shared primitives, authentication/session state, permissions, telemetry, and cross-module composition belong in core areas such as `app/`, `components/`, `hooks/`, and `constants/`.
+- Put new product features in module boundaries instead of scattering feature code across shared folders. Prefer a `modules/<module-name>/` structure when adding a substantial feature.
+- Keep `app/` route files thin. A route should compose module screens and platform layout; feature behavior should live inside the owning module.
+- A module should own its UI, hooks, types, service functions, validation, and local helpers. Use names such as `modules/<module-name>/components`, `modules/<module-name>/hooks`, `modules/<module-name>/services`, and `modules/<module-name>/types` when the module needs them.
+- Modules may import from the platform core and shared primitives, but modules should not import internal files from other modules. If one module needs another module's capability, expose a small public API from that module first.
+- Add or update a module entry file, such as `modules/<module-name>/index.ts`, for exports that are intentionally public. Keep internal implementation files private by convention.
+- Avoid building large cross-module utility folders. Promote code into shared/core only after at least two modules need it and the shared abstraction is stable.
+- Keep module state local by default. Shared state belongs in the platform core only when it truly coordinates multiple modules.
+- Prefer feature flags, configuration, or registry-style composition for optional modules so the platform can enable modules gradually.
+- When implementing a new feature, first decide whether it is platform/core behavior or a module. Default to a module unless it is needed by the whole app.
 
-- Fuer jeden abgeschlossenen Auftrag wird genau ein eigener Commit erstellt.
-- Ein Auftrag gilt als abgeschlossen, wenn die angeforderte Aenderung umgesetzt, sinnvoll geprueft und dem Nutzer kurz zusammengefasst wurde.
-- Vor dem Commit den Arbeitsbaum pruefen und nur Dateien stagen, die zur erledigten Aufgabe gehoeren.
-- Bestehende uncommitted Changes anderer Auftraege oder des Nutzers duerfen nicht ungefragt mitcommittet, geloescht oder zurueckgesetzt werden.
-- Wenn der Auftrag mehrere unabhaengige Themen enthaelt, lieber nachfragen oder die Themen in getrennte Folgeauftraege aufteilen.
-- Commit-Messages kurz und aussagekraeftig formulieren, bevorzugt im Imperativ.
-- Empfohlenes Format: `<typ>: <kurze beschreibung>`, zum Beispiel `docs: add agent workflow rules` oder `feat: add offline sync status`.
-- Nur committen, wenn die relevanten Checks gelaufen sind oder klar dokumentiert ist, warum sie nicht ausgefuehrt wurden.
+## Backend And Prisma
+<!-- Why: The frontend should stay modular and backend-agnostic while the backend/data layer can be implemented with Prisma without leaking database concerns into screens. -->
 
-## Frontend-Regeln
+- Use Prisma only on the backend/server side. Do not import Prisma clients, database models, or database access code directly into Expo route screens or React Native components.
+- Frontend modules should talk to backend capabilities through typed service functions or API clients owned by the module, for example `modules/<module-name>/services`.
+- Keep backend data contracts typed at the boundary. Map Prisma/database shapes into frontend-facing DTOs or domain types before they reach UI components.
+- Keep Prisma schema, migrations, seeds, and database-specific helpers in backend-owned folders once the backend is introduced. Do not mix database files into frontend module UI folders.
+- Keep module APIs stable and narrow. A backend change should usually require edits only in the owning module's service/type layer, not across unrelated screens.
+- When backend work starts, document the chosen backend folder structure here before adding many data access files.
 
-- Die Hauptnavigation verwendet Expo Router und Tabs unter `app/(tabs)/`.
-- UI soll mobil zuerst gedacht sein und auf Web nicht brechen.
-- Nutze bestehende Theme-Farben aus `constants/theme.ts` und thematische Helfer wie `useThemeColor` oder `useThemedStyles`.
-- Wiederkehrende Status-, Sync-, Auth- und Offline-Logik gehoert in die bestehenden Contexts oder Lib-Helfer.
-- Touch-Ziele, leere Zustaende, Ladezustaende und Fehlerzustaende mitdenken.
+## React Best Practices
+<!-- Why: This section keeps React code predictable, readable, and maintainable as the app grows. -->
 
-## Backend- und Datenregeln
+- Use function components and hooks. Do not introduce class components.
+- Keep components small, focused, and named after the UI or behavior they own.
+- Prefer composition over large prop-driven components with many conditional branches.
+- Keep render logic pure. Do not trigger side effects during render.
+- Store the minimum state needed. Derive values from props or state instead of duplicating them.
+- Keep state as close as possible to the component that uses it. Introduce shared state only when multiple screens or components truly need it.
+- Use stable keys for lists. Do not use array indexes as keys when items can be reordered, inserted, or deleted.
+- Use `useMemo` and `useCallback` only when they avoid meaningful recalculation or prevent expensive child renders.
+- Avoid deeply nested JSX. Extract well-named subcomponents when a render function becomes hard to scan.
+- Keep hook dependencies correct. Do not suppress hook dependency lint warnings unless there is a clear reason documented in code.
+- Clean up subscriptions, timers, and async work started from effects.
 
-- `backend/src/server.ts` startet nur den HTTP-Server. Express-App, Middleware und Routenregistrierung gehoeren nach `backend/src/app.ts`.
-- Neue Backend-Endpunkte gehoeren in passende Module unter `backend/src/modules/<domain>/`. Routes sollen HTTP-Parsing/Antworten uebernehmen, Services Businesslogik, Repositories Prisma-Zugriffe.
-- Datenbankzugriff laeuft ueber den Prisma-Client aus `backend/src/prisma.ts`.
-- Fuer request bodies/params vorhandene Validatoren aus `backend/src/shared/validation.ts` oder modulspezifische Schemas nutzen. Keine rohen `request.body`-Werte direkt in Prisma schreiben.
-- Mutierende Endpunkte muessen explizite Auth-/Rollenregeln haben. Globale Ressourcen wie Mahlzeiten und Deadlines nur fuer Manager/Admins oder ueber Change-Requests aenderbar machen.
-- Auth-/Security-Baselines erhalten: keine Tokens/Confirmation-Codes in Production-Logs, CORS nur mit expliziten Origins, JSON-Body-Limits, Security-Header und Rate-Limits fuer Login/Register/Confirm.
-- Owner-Scoping beachten: persoenliche Daten immer nach `session.userId` filtern und nicht nur nach IDs aus Params.
-- Schema-Aenderungen zuerst in `prisma/schema.prisma` modellieren und danach passende Prisma-Befehle ausfuehren.
-- Keine Geheimnisse oder lokalen Pfade einchecken. Konfiguration gehoert in `.env` oder bestehende Konstanten.
-- API-Antworten sollten stabile, einfache JSON-Strukturen behalten, damit die App offlinefaehig bleiben kann.
-- Web-Storage ist fuer Tokens und Private Keys sensibel. Keine neuen Secrets in `localStorage` einfuehren; bevorzugt SecureStore/native Patterns oder ein bewusstes Auth-Konzept mit HttpOnly Cookies.
+## TypeScript
+<!-- Why: This section preserves strict type safety while keeping type annotations useful rather than noisy. -->
 
-## Testregeln
+- Keep TypeScript strict. Prefer explicit prop types for exported components.
+- Use `type` for component props and simple data shapes unless an interface is already the local pattern.
+- Avoid `any`. Use `unknown`, generics, discriminated unions, or narrower domain types instead.
+- Keep route params, API data, and navigation-facing data typed at the boundary.
+- Let TypeScript infer local variables when the inferred type is obvious.
 
-- Tests nutzen den Node-Test-Runner mit `tsx`; keine neue Test-Library einfuehren, wenn `node:test` reicht.
-- Unit-Tests gehoeren nach `backend/test/*.test.ts` fuer pure Helpers, Policies, Validatoren und Services ohne HTTP.
-- Integrationstests duerfen die echte Express-App testen. In der Sandbox kein echtes `app.listen(0)` voraussetzen; Express kann direkt ueber `app.handle` dispatcht werden.
-- Integrationstests sollen isolierte temporaere SQLite-Datenbanken verwenden und ihr minimales Schema selbst anlegen oder sauber vorbereiten. Nicht von lokaler `dev.db` abhaengen.
-- Wenn Tests Module importieren, die Prisma initialisieren, vorher `process.env.DATABASE_URL` setzen.
+## Expo And React Native
+<!-- Why: This section keeps implementation choices compatible with Expo, React Native, native platforms, and web. -->
 
-## Nuetzliche Befehle
+- Use Expo Router primitives for navigation and layout instead of manually wiring navigation stacks unless there is a project-level reason.
+- Use React Native components and APIs instead of web-only DOM APIs.
+- Use `Platform.select` for platform-specific behavior and keep platform differences small.
+- Prefer `expo-image` for images when it fits the use case.
+- Use `FlatList` or `SectionList` for long or dynamic lists.
+- Respect safe areas, keyboard behavior, and small screens when building screens.
 
-```bash
-npm install
-npm run lint
-npm test
-npm run test:unit
-npm run test:integration
-npx tsc --noEmit
-npm run start
-npm run web
-npm run backend:dev
-npm run db:generate
-npm run db:push
-npm run db:seed
-```
+## Styling And UI
+<!-- Why: This section keeps the interface consistent, theme-aware, and usable across devices. -->
 
-## Qualitaetscheck vor Abschluss
+- Use `StyleSheet.create` for component styles.
+- Prefer existing themed primitives such as `ThemedText`, `ThemedView`, `useThemeColor`, and values from `constants/theme` before adding new styling patterns.
+- Keep styles colocated with the component unless they are shared design tokens.
+- Avoid hard-coded colors when the value should respond to light and dark themes.
+- Keep touch targets comfortably tappable and avoid text or controls that can overlap on narrow screens.
+- Use icons from the existing icon libraries when an icon is appropriate.
 
-- `npm run lint` ausfuehren, wenn die Aenderung TypeScript, React-Komponenten oder Backend-Code betrifft.
-- `npm test` ausfuehren, wenn Backend, Auth, Security, Validatoren, API-Verhalten oder Datenlogik betroffen sind.
-- `npx tsc --noEmit` ausfuehren, wenn neue Tests, Typen, Module oder groessere TypeScript-Aenderungen dazugekommen sind.
-- Bei Prisma-Aenderungen `npm run db:generate` und, falls passend, `npm run db:push` oder `npm run db:migrate` ausfuehren.
-- Bei UI-Aenderungen mindestens pruefen, ob die betroffenen Screens ohne offensichtliche Layout-Probleme starten.
-- In der Abschlussnotiz nennen, welche Dateien geaendert wurden und welche Checks gelaufen sind.
+## Accessibility
+<!-- Why: This section ensures core app behavior remains understandable and usable for people using assistive technologies or different visual conditions. -->
 
-## Kommunikationsstil
+- Add `accessibilityRole`, `accessibilityLabel`, and `accessibilityHint` for interactive controls when the visible content is not enough.
+- Ensure tappable elements are reachable and understandable with assistive technologies.
+- Do not rely on color alone to communicate state.
+- Keep text readable in both light and dark themes.
 
-- Antworte kurz, konkret und in Deutsch, sofern der Nutzer Deutsch verwendet.
-- Erklaere relevante Entscheidungen, aber vermeide lange Theorie.
-- Wenn Annahmen noetig sind, benenne sie klar und waehle die konservativste Option.
+## Data And Effects
+<!-- Why: This section keeps async behavior reliable and prevents common React issues like stale updates, missing states, and render side effects. -->
+
+- Put async work in effects, event handlers, or dedicated hooks, not directly in render.
+- Handle loading, empty, and error states for user-facing async data.
+- Guard against setting state after a component unmounts when async work can outlive the component.
+- Prefer small custom hooks for reusable side-effect logic.
+
+## Dependencies
+<!-- Why: This section keeps the dependency graph stable, maintainable, and compatible with the Expo SDK. -->
+
+- Prefer existing dependencies before adding new ones.
+- Add a new dependency only when it clearly reduces complexity or provides a well-maintained platform capability.
+- Keep Expo SDK compatibility in mind when changing React Native or Expo package versions.
+
+## Team Collaboration
+<!-- Why: This section helps multiple people and AI agents work in the same GitHub repository without overwriting each other or creating hard-to-review changes. -->
+
+- Treat this `agent.md` as the shared project guide for every human and AI assistant working in this repository.
+- Keep personal AI preferences, prompts, and local workflow notes outside the repository unless the team agrees they should become shared guidance.
+- Work on feature branches instead of committing directly to `main`.
+- Check `git status` before editing and before finishing work.
+- Never revert, delete, or rewrite changes you did not make unless the user or team explicitly asks for it.
+- Keep pull requests focused on one feature, fix, or cleanup.
+- Link related GitHub issues, tasks, or discussions in commits and pull requests when they exist.
+- Write pull request descriptions that summarize what changed, how it was verified, and any known risks or follow-ups.
+- Be explicit when a change was AI-assisted if that is part of the team's GitHub or review process.
+- Run `npm run lint` before opening a pull request when code changed.
+- Avoid broad refactors, formatting-only churn, or dependency changes inside unrelated feature work.
+- When conflicts or overlapping work appear, pause and coordinate instead of guessing which version should win.
+
+## Quality Checks
+<!-- Why: This section defines the minimum verification expected before considering a change ready for review. -->
+
+- Run `npm run lint` after meaningful code changes.
+- For UI changes, run the app with `npm start` or the relevant target command when practical.
+- Check behavior on small screens and both light and dark color schemes when styling or layout changes are involved.
+- Keep changes focused. Avoid unrelated refactors while implementing a feature or fix.
