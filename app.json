@@ -19,6 +19,9 @@
         "monochromeImage": "./assets/images/hfugoappicon-android-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.NFC"
+      ],
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.studentgo"
     },
@@ -44,7 +47,8 @@
       "expo-image",
       "expo-web-browser",
       "react-native-quick-crypto",
-      "expo-secure-store"
+      "expo-secure-store",
+      "react-native-nfc-manager"
     ],
     "experiments": {
       "typedRoutes": true,
