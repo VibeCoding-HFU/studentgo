@@ -7,11 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
 import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useAuth } from '@/contexts/auth-context';
-import { getBackendUrl } from '@/constants/api';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useThemePreference } from '@/contexts/theme-preference-context';
 import { generateAccountKeyPair, getPrivateKey, hasPrivateKey, publicKeyFromPrivateKey, publicKeyValueIncludes, savePrivateKey } from '@/lib/client-crypto';
 import { Role, roleLabel } from '@/src/shared/types/auth';
+import { updateAccountPublicKeyRequest } from './api';
 import { AuthFormScreen } from './components/AuthFormScreen';
 import { PrivateKeyQrCode, qrPath, type PrivateKeyQr } from './components/PrivateKeyQrCode';
 import { baseStyles } from './styles';
@@ -22,7 +22,6 @@ export default function AccountScreen() {
   const styles = useThemedStyles(baseStyles);
   const { activeRole, confirmRegistration, isAuthenticated, login, logout, register, token, updatePublicKey, user } = useAuth();
   const { preference, togglePreference } = useThemePreference();
-  const backendUrl = getBackendUrl();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [mode, setMode] = useState<Mode>('login');
   const [role, setRole] = useState<Role>('USER');
@@ -140,14 +139,7 @@ export default function AccountScreen() {
       setShowQr(false);
 
       if (!publicKeyValueIncludes(user.publicKeyJson, publicKeyJson)) {
-        const response = await fetch(`${backendUrl}/api/account/public-key`, {
-          body: JSON.stringify({ publicKeyJson }),
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          method: 'PATCH',
-        });
+        const response = await updateAccountPublicKeyRequest(token, publicKeyJson);
 
         if (!response.ok) {
           throw new Error('public-key');
@@ -174,14 +166,7 @@ export default function AccountScreen() {
 
     try {
       const keyPair = await generateAccountKeyPair();
-      const response = await fetch(`${backendUrl}/api/account/public-key`, {
-        body: JSON.stringify({ publicKeyJson: keyPair.publicKeyJson }),
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        method: 'PATCH',
-      });
+      const response = await updateAccountPublicKeyRequest(token, keyPair.publicKeyJson);
 
       if (!response.ok) {
         throw new Error('public-key');

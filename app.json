@@ -18,7 +18,6 @@
         "backgroundImage": "./assets/images/hfugoappicon-android-background.png",
         "monochromeImage": "./assets/images/hfugoappicon-android-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.NFC"
       ],
