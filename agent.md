@@ -10,17 +10,19 @@ This project is an Expo React Native app using TypeScript, Expo Router, React 19
 - Put shared reusable UI in `components/`.
 - Put reusable hooks in `hooks/`.
 - Put design tokens, theme values, and constants in `constants/`.
+- Put product features in `src/features/<feature-name>/`.
+- Put cross-feature frontend helpers in `src/shared/`.
 - Prefer imports through the configured `@/` alias for project files.
 
 ## Modular Platform Architecture
 <!-- Why: StudentGo should grow as a small core platform with independent frontend modules, instead of becoming a tightly coupled app where every feature reaches into every other feature. -->
 
 - Treat the core app as the platform shell: routing, navigation, theming, shared primitives, authentication/session state, permissions, telemetry, and cross-module composition belong in core areas such as `app/`, `components/`, `hooks/`, and `constants/`.
-- Put new product features in module boundaries instead of scattering feature code across shared folders. Prefer a `modules/<module-name>/` structure when adding a substantial feature.
+- Put new product features in `src/features/<feature-name>/` instead of scattering feature code across shared folders.
 - Keep `app/` route files thin. A route should compose module screens and platform layout; feature behavior should live inside the owning module.
-- A module should own its UI, hooks, types, service functions, validation, and local helpers. Use names such as `modules/<module-name>/components`, `modules/<module-name>/hooks`, `modules/<module-name>/services`, and `modules/<module-name>/types` when the module needs them.
+- A module should own its UI, hooks, types, API functions, validation, and local helpers. Use names such as `src/features/<feature-name>/components`, `src/features/<feature-name>/hooks`, `src/features/<feature-name>/api.ts`, and `src/features/<feature-name>/types.ts` when the module needs them.
 - Modules may import from the platform core and shared primitives, but modules should not import internal files from other modules. If one module needs another module's capability, expose a small public API from that module first.
-- Add or update a module entry file, such as `modules/<module-name>/index.ts`, for exports that are intentionally public. Keep internal implementation files private by convention.
+- Add or update a module entry file, such as `src/features/<feature-name>/index.ts`, for exports that are intentionally public. Keep internal implementation files private by convention.
 - Avoid building large cross-module utility folders. Promote code into shared/core only after at least two modules need it and the shared abstraction is stable.
 - Keep module state local by default. Shared state belongs in the platform core only when it truly coordinates multiple modules.
 - Prefer feature flags, configuration, or registry-style composition for optional modules so the platform can enable modules gradually.
@@ -30,11 +32,12 @@ This project is an Expo React Native app using TypeScript, Expo Router, React 19
 <!-- Why: The frontend should stay modular and backend-agnostic while the backend/data layer can be implemented with Prisma without leaking database concerns into screens. -->
 
 - Use Prisma only on the backend/server side. Do not import Prisma clients, database models, or database access code directly into Expo route screens or React Native components.
-- Frontend modules should talk to backend capabilities through typed service functions or API clients owned by the module, for example `modules/<module-name>/services`.
+- Frontend modules should talk to backend capabilities through typed API clients owned by the module, for example `src/features/<feature-name>/api.ts`, preferably built on `src/shared/api/client.ts`.
 - Keep backend data contracts typed at the boundary. Map Prisma/database shapes into frontend-facing DTOs or domain types before they reach UI components.
-- Keep Prisma schema, migrations, seeds, and database-specific helpers in backend-owned folders once the backend is introduced. Do not mix database files into frontend module UI folders.
+- Keep Prisma schema, migrations, seeds, generated clients, and database-specific helpers in backend-owned folders. Do not mix database files into frontend feature UI folders.
 - Keep module APIs stable and narrow. A backend change should usually require edits only in the owning module's service/type layer, not across unrelated screens.
-- When backend work starts, document the chosen backend folder structure here before adding many data access files.
+- Backend modules live in `backend/src/modules/<module-name>/` and should follow the route/service/repository pattern: routes handle HTTP wiring, services handle business workflows, and repositories own Prisma access.
+- Use `backend/src/modules/<module-name>/<module-name>.schemas.ts` for request parsing/validation when a module has more than trivial input handling.
 
 ## React Best Practices
 <!-- Why: This section keeps React code predictable, readable, and maintainable as the app grows. -->
@@ -116,6 +119,7 @@ This project is an Expo React Native app using TypeScript, Expo Router, React 19
 - Write pull request descriptions that summarize what changed, how it was verified, and any known risks or follow-ups.
 - Be explicit when a change was AI-assisted if that is part of the team's GitHub or review process.
 - Run `npm run lint` before opening a pull request when code changed.
+- Run `npm run typecheck` before opening a pull request when TypeScript code changed.
 - Avoid broad refactors, formatting-only churn, or dependency changes inside unrelated feature work.
 - When conflicts or overlapping work appear, pause and coordinate instead of guessing which version should win.
 
@@ -123,6 +127,7 @@ This project is an Expo React Native app using TypeScript, Expo Router, React 19
 <!-- Why: This section defines the minimum verification expected before considering a change ready for review. -->
 
 - Run `npm run lint` after meaningful code changes.
+- Run `npm run typecheck` after meaningful TypeScript changes.
 - For UI changes, run the app with `npm start` or the relevant target command when practical.
 - Check behavior on small screens and both light and dark color schemes when styling or layout changes are involved.
 - Keep changes focused. Avoid unrelated refactors while implementing a feature or fix.

@@ -3,11 +3,15 @@ import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
 import { registerAccountRoutes } from "./modules/account/account.routes";
 import { registerAdminRoutes } from "./modules/admin/admin.routes";
+import { requireAdmin } from "./modules/auth/auth.service";
 import { registerAuthRoutes } from "./modules/auth/auth.routes";
+import { registerContactRoutes } from "./modules/contacts/contacts.routes";
+import { registerDeadlineRoutes } from "./modules/deadlines/deadlines.routes";
+import { registerMealRoutes } from "./modules/meals/meals.routes";
 import { importSwfrMeals, scheduleDailySwfrImport } from "./modules/schedule/schedule-imports";
 import { registerScheduleRoutes } from "./modules/schedule/schedule.routes";
-import { registerResourceRoutes } from "./modules/resources/resources.routes";
-import { requireAdmin } from "./modules/auth/auth.service";
+import { registerStudyInfoRoutes } from "./modules/study-info/study-info.routes";
+import { registerTodoRoutes } from "./modules/todos/todos.routes";
 import { HttpError } from "./shared/http/http-error";
 import { createRateLimit } from "./shared/rate-limit";
 import { configuredCorsOrigin, securityHeaders } from "./shared/security";
@@ -37,10 +41,14 @@ app.use(["/api/auth/login", "/api/auth/register", "/api/auth/confirm"], authRate
 app.use("/api/users/search", userSearchRateLimit);
 
 registerAuthRoutes(app);
-registerAdminRoutes(app);
 registerAccountRoutes(app);
-registerResourceRoutes(app);
+registerAdminRoutes(app);
+registerContactRoutes(app);
+registerDeadlineRoutes(app);
+registerMealRoutes(app);
 registerScheduleRoutes(app);
+registerStudyInfoRoutes(app);
+registerTodoRoutes(app);
 
 app.post("/api/admin/import/swfr-meals", requireAdmin, async (_request, response) => {
   const count = await importSwfrMeals();

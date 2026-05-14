@@ -9,7 +9,7 @@ import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 import { readApiError } from '@/src/shared/api/client';
 import { Role, roleLabel } from '@/src/shared/types/auth';
-import { ManagerWorkspace } from '@/src/features/manager/ManagerScreen';
+import { ManagerWorkspace } from '@/src/features/manager';
 import { AdminUser, ChangeRequest, Summary, deleteAdminUserRequest, fetchAdminBundle, reviewChangeRequest, saveAdminUser } from './api';
 import { AdminRoleComboBox } from './components/AdminRoleComboBox';
 import { baseStyles } from './styles';

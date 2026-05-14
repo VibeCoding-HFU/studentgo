@@ -1,36 +1,15 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SyncStatusBadge } from '@/components/sync-status-badge';
-import { getBackendUrl } from '@/constants/api';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 import { decryptPayloadWithPrivateKeys, getPrivateKeys } from '@/lib/client-crypto';
+import { fetchInvitationRequests, respondToInvitationRequest } from './api';
 import { baseStyles } from './styles';
-
-type Invitation = {
-  id: number;
-  encryptedKey?: string | null;
-  encryptedPayload?: string | null;
-  encryptionIv?: string | null;
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
-  createdAt: string;
-  lesson: {
-    date?: string | null;
-    description?: string | null;
-    endTime: string;
-    isRecurring: boolean;
-    scheduleDay: { day: string };
-    startTime: string;
-    title: string;
-  };
-  sender: {
-    email: string;
-    name: string;
-  };
-};
+import type { Invitation } from './types';
 
 function statusLabel(status: Invitation['status']) {
   if (status === 'ACCEPTED') {
@@ -55,7 +34,6 @@ function formatDate(value?: string | null) {
 export default function RequestsScreen() {
   const styles = useThemedStyles(baseStyles);
   const { token, user } = useAuth();
-  const backendUrl = useMemo(() => getBackendUrl(), []);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [error, setError] = useState('');
 
@@ -65,16 +43,11 @@ export default function RequestsScreen() {
       return;
     }
 
-    const response = await fetch(`${backendUrl}/api/schedule/invitations`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!response.ok) {
+    const data = await fetchInvitationRequests(token).catch(() => null);
+    if (!data) {
       setError('Anfragen konnten nicht geladen werden.');
       return;
     }
-
-    const data = (await response.json()) as Invitation[];
     const privateKeys = user?.email ? await getPrivateKeys(user.email) : [];
     const decrypted = await Promise.all(data.map(async (invitation) => {
       if (privateKeys.length === 0 || !invitation.encryptedPayload || !invitation.encryptedKey || !invitation.encryptionIv) {
@@ -100,7 +73,7 @@ export default function RequestsScreen() {
       }
     }));
     setInvitations(decrypted);
-  }, [backendUrl, token, user?.email]);
+  }, [token, user?.email]);
 
   useEffect(() => {
     loadInvitations();
@@ -111,10 +84,7 @@ export default function RequestsScreen() {
       return;
     }
 
-    const response = await fetch(`${backendUrl}/api/schedule/invitations/${id}/${decision}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      method: 'POST',
-    });
+    const response = await respondToInvitationRequest(token, id, decision);
 
     if (!response.ok) {
       setError('Antwort konnte nicht gespeichert werden.');

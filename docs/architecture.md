@@ -39,7 +39,7 @@ Keep route files in `app/(tabs)` thin over time by rendering feature screen comp
 - `backend/src/modules/auth` contains authentication/account routes plus password, session, role, and pending-account services.
 - `backend/src/modules/account` contains account-specific authenticated views such as statistics.
 - `backend/src/modules/admin` contains admin user management and manager/admin change-request workflows.
-- `backend/src/modules/resources` contains compact CRUD/resource routes for contacts, meals, deadlines, todos, and study info.
+- `backend/src/modules/contacts`, `meals`, `deadlines`, `todos`, and `study-info` contain compact resource modules.
 - `backend/src/modules/schedule` contains schedule routes, schedule helpers, and StarPlan/SWFR import services.
 - `backend/src/shared` contains backend-only reusable utilities, for example date/time helpers used by schedule and meal import logic.
 - `UserPublicKey` is the canonical storage for account public keys. `User.publicKeyJson` remains ignored in Prisma as a legacy database column for migration compatibility.
@@ -76,6 +76,7 @@ Current examples:
 backend/src/modules/<module>/
   <module>.routes.ts
   <module>.service.ts
+  <module>.repository.ts
   <module>.types.ts
 ```
 

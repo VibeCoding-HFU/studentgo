@@ -1,8 +1,10 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "crypto";
 import { NextFunction, Request, Response } from "express";
 import { promisify } from "util";
-import { prisma } from "../../prisma";
-import { forbidden, unauthorized } from "../../shared/http/http-error";
+import { badRequest, conflict, forbidden, unauthorized } from "../../shared/http/http-error";
+import { normalizePublicKeyJson } from "../../shared/public-key";
+import { objectPayload } from "../../shared/validation";
+import { authRepository } from "./auth.repository";
 
 const scryptAsync = promisify(scrypt);
 const SESSION_DAYS = 7;
@@ -94,10 +96,7 @@ async function sendConfirmationEmail(email: string, token: string) {
 }
 
 export async function ensureAccountCanBeRequested(email: string, role: Role, allowAdmin: boolean) {
-  const [existingUser, existingPending] = await Promise.all([
-    prisma.user.findUnique({ where: { email } }),
-    prisma.pendingAccount.findUnique({ where: { email } }),
-  ]);
+  const [existingUser, existingPending] = await authRepository.findAccountRequestState(email);
 
   if (existingUser) {
     return "An account with this email already exists.";
@@ -115,17 +114,7 @@ export async function ensureAccountCanBeRequested(email: string, role: Role, all
 }
 
 export async function hasAnyAdminOrPendingAdmin() {
-  const [admins, pendingAdmins] = await Promise.all([
-    prisma.user.count({ where: { role: "ADMIN" } }),
-    prisma.pendingAccount.count({
-      where: {
-        expiresAt: { gt: new Date() },
-        role: "ADMIN",
-      },
-    }),
-  ]);
-
-  return admins + pendingAdmins > 0;
+  return (await authRepository.countActiveAdminRequests(new Date())) > 0;
 }
 
 export function publicKeyJsonsFromValue(value?: string | null) {
@@ -172,43 +161,16 @@ export async function createPendingAccount(data: {
   const passwordData = await hashPassword(data.password);
   const confirmationToken = randomBytes(32).toString("base64url");
 
-  const pendingAccount = await prisma.$transaction(async (transaction) => {
-    await transaction.pendingAccount.deleteMany({
-      where: {
-        email: data.email,
-        expiresAt: { lte: new Date() },
-      },
-    });
-
-    if (data.role === "ADMIN" && !data.requestedById) {
-      const [admins, pendingAdmins] = await Promise.all([
-        transaction.user.count({ where: { role: "ADMIN" } }),
-        transaction.pendingAccount.count({
-          where: {
-            expiresAt: { gt: new Date() },
-            role: "ADMIN",
-          },
-        }),
-      ]);
-
-      if (admins + pendingAdmins > 0) {
-        throw forbidden("Admin accounts can only be created by an admin.");
-      }
-    }
-
-    return transaction.pendingAccount.create({
-      data: {
-        confirmationTokenHash: hashConfirmationToken(confirmationToken),
-        email: data.email,
-        expiresAt: createConfirmationExpiry(),
-        name: data.name,
-        passwordHash: passwordData.hash,
-        passwordSalt: passwordData.salt,
-        publicKeyJson: data.publicKeyJson ? addPublicKeyToValue(null, data.publicKeyJson) : null,
-        requestedById: data.requestedById ?? null,
-        role: data.role,
-      },
-    });
+  const pendingAccount = await authRepository.createPendingAccount({
+    confirmationTokenHash: hashConfirmationToken(confirmationToken),
+    email: data.email,
+    expiresAt: createConfirmationExpiry(),
+    name: data.name,
+    passwordHash: passwordData.hash,
+    passwordSalt: passwordData.salt,
+    publicKeyJson: data.publicKeyJson ? addPublicKeyToValue(null, data.publicKeyJson) : null,
+    requestedById: data.requestedById,
+    role: data.role,
   });
 
   await sendConfirmationEmail(data.email, confirmationToken);
@@ -217,32 +179,13 @@ export async function createPendingAccount(data: {
 }
 
 export async function confirmPendingAccount(token: string) {
-  const pendingAccount = await prisma.pendingAccount.findUnique({
-    where: { confirmationTokenHash: hashConfirmationToken(token) },
-  });
+  const pendingAccount = await authRepository.findPendingAccountByConfirmationTokenHash(hashConfirmationToken(token));
 
   if (!pendingAccount || pendingAccount.expiresAt <= new Date()) {
     return null;
   }
 
-  return prisma.$transaction(async (transaction) => {
-    const user = await transaction.user.create({
-      data: {
-        email: pendingAccount.email,
-        name: pendingAccount.name,
-        passwordHash: pendingAccount.passwordHash,
-        passwordSalt: pendingAccount.passwordSalt,
-        publicKeys: {
-          create: publicKeyJsonsFromValue(pendingAccount.publicKeyJson).map((publicKeyJson) => ({ publicKeyJson })),
-        },
-        role: pendingAccount.role,
-      },
-      include: { publicKeys: true },
-    });
-
-    await transaction.pendingAccount.delete({ where: { id: pendingAccount.id } });
-    return user;
-  });
+  return authRepository.createUserFromPendingAccount(pendingAccount, publicKeyJsonsFromValue(pendingAccount.publicKeyJson));
 }
 
 export function publicUser(user: { id: number; name: string; email: string; publicKeys?: Array<{ publicKeyJson: string }>; role: Role }) {
@@ -257,13 +200,11 @@ export function publicUser(user: { id: number; name: string; email: string; publ
 
 export async function createSession(userId: number, activeRole: Role) {
   const token = randomBytes(32).toString("base64url");
-  await prisma.session.create({
-    data: {
-      activeRole,
-      expiresAt: createSessionExpiry(),
-      tokenHash: hashSessionToken(token),
-      userId,
-    },
+  await authRepository.createSession({
+    activeRole,
+    expiresAt: createSessionExpiry(),
+    tokenHash: hashSessionToken(token),
+    userId,
   });
 
   return token;
@@ -276,10 +217,7 @@ export async function getSession(request: Request) {
     return null;
   }
 
-  const session = await prisma.session.findUnique({
-    include: { user: { include: { publicKeys: true } } },
-    where: { tokenHash: hashSessionToken(token) },
-  });
+  const session = await authRepository.findSessionByTokenHash(hashSessionToken(token));
 
   if (!session || session.expiresAt <= new Date()) {
     return null;
@@ -334,4 +272,105 @@ export async function requireManager(request: Request, response: Response, next:
 
   response.locals.session = session;
   next();
+}
+
+export async function registerAccount(body: unknown) {
+  const payload = objectPayload(body);
+  const name = normalizeName(payload.name);
+  const email = normalizeEmail(payload.email);
+  const password = typeof payload.password === "string" ? payload.password : "";
+  const publicKeyJson = normalizePublicKeyJson(payload.publicKeyJson);
+  const role = normalizeRole(payload.role);
+
+  if (!name || !email || password.length < 8) {
+    throw badRequest("Name, email and a password with at least 8 characters are required.");
+  }
+
+  if (payload.publicKeyJson && !publicKeyJson) {
+    throw badRequest("A valid public key is required.");
+  }
+
+  const allowAdmin = role !== "ADMIN" || !(await hasAnyAdminOrPendingAdmin());
+  const accountError = await ensureAccountCanBeRequested(email, role, allowAdmin);
+
+  if (accountError) {
+    throw role === "ADMIN" && !allowAdmin ? forbidden(accountError) : conflict(accountError);
+  }
+
+  const pendingAccount = await createPendingAccount({ email, name, password, publicKeyJson, role });
+
+  return {
+    email: pendingAccount.email,
+    expiresAt: pendingAccount.expiresAt,
+    requiresConfirmation: true,
+  };
+}
+
+export async function confirmAccount(tokenInput: unknown) {
+  const confirmationToken = typeof tokenInput === "string" ? tokenInput.trim() : "";
+
+  if (!confirmationToken) {
+    throw badRequest("Confirmation token is required.");
+  }
+
+  const user = await confirmPendingAccount(confirmationToken);
+
+  if (!user) {
+    throw badRequest("Confirmation token is invalid or expired.");
+  }
+
+  const token = await createSession(user.id, user.role);
+  return { token, activeRole: user.role, user: publicUser(user) };
+}
+
+export async function login(body: unknown) {
+  const payload = objectPayload(body);
+  const email = normalizeEmail(payload.email);
+  const password = typeof payload.password === "string" ? payload.password : "";
+  const requestedRole = normalizeRole(payload.loginAs);
+  const user = await authRepository.findUserByEmailWithPublicKeys(email);
+
+  if (!user || !(await verifyPassword(password, user.passwordHash, user.passwordSalt))) {
+    throw unauthorized("Invalid email or password.");
+  }
+
+  if (!canUseRole(user.role, requestedRole)) {
+    throw forbidden("This account has no permission for the selected role.");
+  }
+
+  const token = await createSession(user.id, requestedRole);
+  return { token, activeRole: requestedRole, user: publicUser(user) };
+}
+
+export async function logout(token: string) {
+  if (token) {
+    await authRepository.deleteSessionsByTokenHash(hashSessionToken(token));
+  }
+}
+
+export async function searchUsers(session: NonNullable<AuthSession>, queryInput: unknown) {
+  const query = typeof queryInput === "string" ? queryInput.trim() : "";
+
+  if (query.length < 3) {
+    return [];
+  }
+
+  const users = await authRepository.searchUsers(session.userId, query);
+  return users.map(publicUser);
+}
+
+export async function updateAccountPublicKey(session: AuthSession, publicKeyInput: unknown) {
+  if (!session) {
+    throw unauthorized("Not authenticated.");
+  }
+
+  const publicKeyJson = normalizePublicKeyJson(publicKeyInput);
+
+  if (!publicKeyJson) {
+    throw badRequest("A valid public key is required.");
+  }
+
+  await authRepository.upsertPublicKey(session.userId, publicKeyJson);
+  const user = await authRepository.findUserByIdWithPublicKeys(session.userId);
+  return publicUser(user);
 }
