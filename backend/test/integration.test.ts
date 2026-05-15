@@ -271,3 +271,24 @@ test("returns validation errors for malformed authenticated resource writes", as
   assert.equal(response.status, 400);
   assert.match(body.error, /main dish|required|priceCents/i);
 });
+
+test("returns meals for requested future weeks", async () => {
+  await prisma.mealPlan.create({
+    data: {
+      canteenId,
+      currency: "EUR",
+      date: new Date("2026-05-18T12:00:00"),
+      day: "Montag",
+      mainDish: "Future week bowl",
+      priceCents: 425,
+      source: "SWFR",
+      sourceKey: "swfr-test-2026-05-18-future-week-bowl",
+    },
+  });
+
+  const response = await api("/api/meals?weekStart=2026-05-18");
+  const body = await response.json() as Array<{ mainDish: string }>;
+
+  assert.equal(response.status, 200);
+  assert.equal(body.some((meal) => meal.mainDish === "Future week bowl"), true);
+});

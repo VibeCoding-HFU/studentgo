@@ -9,13 +9,13 @@ import {
 } from "../../shared/date-utils";
 import { fetchStarPlanJson, fetchStarPlanTimetableHtml } from "../../integrations/starplan/starplan.client";
 import { parseStarPlanTimetable } from "../../integrations/starplan/starplan.parser";
-import { fetchSwfrMealPlanHtml } from "../../integrations/swfr/swfr.client";
+import { fetchSwfrMealPlanHtmlPages } from "../../integrations/swfr/swfr.client";
 import { parseSwfrMeals } from "../../integrations/swfr/swfr.parser";
 import { lessonsOverlap } from "./schedule-utils";
 
 export async function importSwfrMeals() {
-  const html = await fetchSwfrMealPlanHtml();
-  const meals = parseSwfrMeals(html);
+  const htmlPages = await fetchSwfrMealPlanHtmlPages();
+  const meals = htmlPages.flatMap((html) => parseSwfrMeals(html));
   const canteen = await getOrCreateCanteen("Mensa Furtwangen");
   const importedAt = new Date();
 
@@ -47,7 +47,7 @@ export function scheduleDailySwfrImport() {
   const runImport = async () => {
     try {
       const count = await importSwfrMeals();
-      console.log(`Imported ${count} SWFR meals for the current week.`);
+      console.log(`Imported ${count} SWFR meals from available meal plans.`);
     } catch (error) {
       console.error("SWFR meal import failed:", error);
     }
