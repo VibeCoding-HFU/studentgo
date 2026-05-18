@@ -1,4 +1,4 @@
-import { dateForDay, endOfWeek, startOfWeek } from "../../shared/date-utils";
+import { dateForDay } from "../../shared/date-utils";
 
 function decodeHtml(value: string) {
   return value
@@ -75,5 +75,5 @@ export function parseSwfrMeals(html: string) {
     }
   }
 
-  return meals.filter((meal) => meal.date >= startOfWeek() && meal.date < endOfWeek());
+  return meals;
 }
