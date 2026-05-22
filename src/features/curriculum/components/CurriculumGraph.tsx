@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import Svg, { G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import { useThemedStyles } from '@/hooks/use-themed-styles';
@@ -199,6 +199,12 @@ export function CurriculumGraph({
     setZoom((current) => Math.max(0.75, Math.min(1.85, Number((current + delta).toFixed(2)))));
   }
 
+  function handleNodePress(node: CurriculumGraphData['nodes'][number]) {
+    if (node.type === 'module') {
+      onSelectModule(node.id.replace('module:', ''));
+    }
+  }
+
   return (
     <View style={styles.graphShell}>
       <View style={styles.graphControls}>
@@ -261,15 +267,14 @@ export function CurriculumGraph({
             })}
             {Array.from(layout.positionedNodes.values()).map(({ node, x, y, width, height }) => {
               const colors = nodeColors(node);
+              const interactionProps = Platform.OS === 'web'
+                ? { onClick: () => handleNodePress(node) }
+                : { onPress: () => handleNodePress(node) };
 
               return (
                 <G
                   key={node.id}
-                  onPress={() => {
-                    if (node.type === 'module') {
-                      onSelectModule(node.id.replace('module:', ''));
-                    }
-                  }}>
+                  {...interactionProps}>
                   <Rect fill={colors.fill} height={height} rx={18} ry={18} stroke={colors.stroke} strokeWidth={1.4} width={width} x={x} y={y} />
                   <SvgText fill={colors.text} fontSize={node.type === 'program' ? 22 : node.type === 'semester' ? 16 : 14} fontWeight="700" x={x + 14} y={y + 24}>
                     {node.label}
