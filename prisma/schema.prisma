@@ -392,87 +392,87 @@ enum ElectiveSlotKind {
 }
 
 model CurriculumDocument {
-  id         String                @id
-  type       CurriculumDocumentType
-  programCode String
-  title      String
-  versionLabel String?
+  id            String                 @id
+  type          CurriculumDocumentType
+  programCode   String
+  title         String
+  versionLabel  String?
   effectiveDate DateTime?
-  retrievedAt DateTime?
-  fileName   String
-  filePath   String?
-  sha256     String
-  pageCount  Int
-  sourceRefs CurriculumSourceRef[]
-  createdAt  DateTime              @default(now())
-  updatedAt  DateTime              @default(now()) @updatedAt
+  retrievedAt   DateTime?
+  fileName      String
+  filePath      String?
+  sha256        String
+  pageCount     Int
+  sourceRefs    CurriculumSourceRef[]
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @default(now()) @updatedAt
 
   @@index([programCode, type])
 }
 
 model StudyProgram {
-  id                    String                    @id
-  code                  String                    @unique
-  name                  String
-  degree                String
-  totalCredits          Int
-  regularSemesters      Int
-  basicStudySemesters   Int
+  id                     String                @id
+  code                   String                @unique
+  name                   String
+  degree                 String
+  totalCredits           Int
+  regularSemesters       Int
+  basicStudySemesters    Int
   advancedStudySemesters Int
-  bilingual             Boolean                   @default(false)
-  semesters             ProgramSemester[]
-  modules               CurriculumModule[]
-  specializations       Specialization[]
-  electiveSlots         ElectiveSlot[]
-  sourceRefs            CurriculumSourceRef[]
-  createdAt             DateTime                  @default(now())
-  updatedAt             DateTime                  @default(now()) @updatedAt
+  bilingual              Boolean               @default(false)
+  semesters              ProgramSemester[]
+  modules                CurriculumModule[]
+  specializations        Specialization[]
+  electiveSlots          ElectiveSlot[]
+  sourceRefs             CurriculumSourceRef[]
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @default(now()) @updatedAt
 }
 
 model ProgramSemester {
-  id            Int                @id @default(autoincrement())
+  id             Int              @id @default(autoincrement())
   studyProgramId String
-  studyProgram  StudyProgram       @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
-  number        Int
-  title         String
-  credits       Int
-  area          String
-  modules       CurriculumModule[]
-  electiveSlots ElectiveSlot[]
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @default(now()) @updatedAt
+  studyProgram   StudyProgram     @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  number         Int
+  title          String
+  credits        Int
+  area           String
+  modules        CurriculumModule[]
+  electiveSlots  ElectiveSlot[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @default(now()) @updatedAt
 
   @@unique([studyProgramId, number])
 }
 
 model CurriculumModule {
-  id                String                             @id
-  studyProgramId    String
-  studyProgram      StudyProgram                       @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
-  semesterId        Int?
-  semester          ProgramSemester?                   @relation(fields: [semesterId], references: [id], onDelete: SetNull)
-  title             String
-  credits           Int
-  area              CurriculumModuleArea
-  status            CurriculumRecordStatus             @default(VALIDATED)
-  language          String?
-  workloadHours     Int?
-  contactHours      Int?
-  selfStudyHours    Int?
-  frequency         String?
-  duration          String?
-  prerequisitesText String?
-  sortOrder         Int                                @default(0)
-  courses           CurriculumCourse[]
-  assessments       CurriculumAssessment[]
-  prerequisiteModules CurriculumModulePrerequisite[]   @relation("CurriculumModulePrerequisiteSource")
-  requiredByModules   CurriculumModulePrerequisite[]   @relation("CurriculumModulePrerequisiteTarget")
-  tags                CurriculumModuleTag[]
-  specializations     CurriculumModuleSpecialization[]
+  id                       String                           @id
+  studyProgramId           String
+  studyProgram             StudyProgram                     @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  semesterId               Int?
+  semester                 ProgramSemester?                 @relation(fields: [semesterId], references: [id], onDelete: SetNull)
+  title                    String
+  credits                  Int
+  area                     CurriculumModuleArea
+  status                   CurriculumRecordStatus           @default(VALIDATED)
+  language                 String?
+  workloadHours            Int?
+  contactHours             Int?
+  selfStudyHours           Int?
+  frequency                String?
+  duration                 String?
+  prerequisitesText        String?
+  sortOrder                Int                              @default(0)
+  courses                  CurriculumCourse[]
+  assessments              CurriculumAssessment[]
+  prerequisiteModules      CurriculumModulePrerequisite[]   @relation("CurriculumModulePrerequisiteSource")
+  requiredByModules        CurriculumModulePrerequisite[]   @relation("CurriculumModulePrerequisiteTarget")
+  tags                     CurriculumModuleTag[]
+  specializations          CurriculumModuleSpecialization[]
   candidateInElectiveSlots ElectiveSlotCandidateModule[]
-  sourceRefs          CurriculumSourceRef[]
-  createdAt         DateTime                           @default(now())
-  updatedAt         DateTime                           @default(now()) @updatedAt
+  sourceRefs               CurriculumSourceRef[]
+  createdAt                DateTime                         @default(now())
+  updatedAt                DateTime                         @default(now()) @updatedAt
 
   @@index([studyProgramId, semesterId, sortOrder])
   @@index([title])
@@ -480,16 +480,16 @@ model CurriculumModule {
 }
 
 model CurriculumCourse {
-  id         Int              @id @default(autoincrement())
-  moduleId   String
-  module     CurriculumModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-  title      String
-  kindCode   String
-  kindLabel  String
+  id          Int              @id @default(autoincrement())
+  moduleId    String
+  module      CurriculumModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title       String
+  kindCode    String
+  kindLabel   String
   weeklyHours Int?
-  sortOrder  Int              @default(0)
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @default(now()) @updatedAt
+  sortOrder   Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @default(now()) @updatedAt
 
   @@index([moduleId, sortOrder])
 }
@@ -522,15 +522,15 @@ model CurriculumModulePrerequisite {
 }
 
 model Specialization {
-  id            String                         @id
+  id             String                         @id
   studyProgramId String
-  studyProgram  StudyProgram                   @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
-  code          String
-  name          String
-  description   String?
-  modules       CurriculumModuleSpecialization[]
-  createdAt     DateTime                       @default(now())
-  updatedAt     DateTime                       @default(now()) @updatedAt
+  studyProgram   StudyProgram                   @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  code           String
+  name           String
+  description    String?
+  modules        CurriculumModuleSpecialization[]
+  createdAt      DateTime                       @default(now())
+  updatedAt      DateTime                       @default(now()) @updatedAt
 
   @@unique([studyProgramId, code])
 }
@@ -567,51 +567,51 @@ model CurriculumModuleSpecialization {
 }
 
 model ElectiveSlot {
-  id            String                         @id
-  studyProgramId String
-  studyProgram  StudyProgram                   @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
-  semesterId    Int
-  semester      ProgramSemester                @relation(fields: [semesterId], references: [id], onDelete: Cascade)
-  name          String
-  credits       Int
-  kind          ElectiveSlotKind
-  status        CurriculumRecordStatus         @default(VALIDATED)
-  description   String?
-  sortOrder     Int                            @default(0)
+  id               String                         @id
+  studyProgramId   String
+  studyProgram     StudyProgram                   @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  semesterId       Int
+  semester         ProgramSemester                @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+  name             String
+  credits          Int
+  kind             ElectiveSlotKind
+  status           CurriculumRecordStatus         @default(VALIDATED)
+  description      String?
+  sortOrder        Int                            @default(0)
   candidateModules ElectiveSlotCandidateModule[]
   sourceRefs       CurriculumSourceRef[]
-  createdAt     DateTime                       @default(now())
-  updatedAt     DateTime                       @default(now()) @updatedAt
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @default(now()) @updatedAt
 
   @@index([studyProgramId, semesterId, sortOrder])
 }
 
 model ElectiveSlotCandidateModule {
   electiveSlotId String
-  electiveSlot   ElectiveSlot      @relation(fields: [electiveSlotId], references: [id], onDelete: Cascade)
+  electiveSlot   ElectiveSlot     @relation(fields: [electiveSlotId], references: [id], onDelete: Cascade)
   moduleId       String
-  module         CurriculumModule  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  module         CurriculumModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
 
   @@id([electiveSlotId, moduleId])
   @@index([moduleId])
 }
 
 model CurriculumSourceRef {
-  id             Int                 @id @default(autoincrement())
+  id             Int                @id @default(autoincrement())
   documentId     String
-  document       CurriculumDocument  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  document       CurriculumDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   studyProgramId String?
-  studyProgram   StudyProgram?       @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  studyProgram   StudyProgram?      @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
   moduleId       String?
-  module         CurriculumModule?   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  module         CurriculumModule?  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
   electiveSlotId String?
-  electiveSlot   ElectiveSlot?       @relation(fields: [electiveSlotId], references: [id], onDelete: Cascade)
+  electiveSlot   ElectiveSlot?      @relation(fields: [electiveSlotId], references: [id], onDelete: Cascade)
   pageStart      Int
   pageEnd        Int
   locator        String?
   note           String?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @default(now()) @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @default(now()) @updatedAt
 
   @@index([documentId, pageStart, pageEnd])
   @@index([studyProgramId])

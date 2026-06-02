@@ -39,9 +39,17 @@ Wichtig: Die App verwendet native Crypto-Abhaengigkeiten (`react-native-quick-cr
 
    ```bash
    npm run db:generate
-   npm run db:push
+   npm run db:deploy
    npm run db:seed
    ```
+
+   Wenn bereits eine lokale Datenbank aus dem alten `main`-Workflow mit `db:push` existiert, stattdessen einmalig zuerst ausfuehren:
+
+   ```bash
+   npm run db:adopt-main
+   ```
+
+   Das markiert die neue Prisma-Baseline als angewendet und spielt danach nur noch die fehlenden Folgemigrationen ein, ohne die vorhandene Datenbank zurueckzusetzen.
 
 ## Starten
 
@@ -118,6 +126,8 @@ Oeffne die App dann im zuvor gebauten Development Build, nicht in Expo Go.
 
 ```bash
 npm run db:generate  # Prisma Client generieren
+npm run db:deploy    # Vorhandene Migrationen auf eine leere/neue DB anwenden
+npm run db:adopt-main # Bestehende main-DB in die neue Migrationshistorie uebernehmen
 npm run db:push      # Schema in die lokale SQLite-Datenbank schreiben
 npm run db:seed      # Seed-Daten einfuegen
 npm run db:studio    # Prisma Studio starten
