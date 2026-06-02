@@ -33,6 +33,8 @@ function mapPrerequisiteModules(prerequisites: CurriculumModuleRecord["prerequis
 }
 
 export function mapProgram(program: CurriculumProgramRecord) {
+  const activeSpoVersion = program.spoVersions[0] ?? null;
+
   return {
     basicStudySemesters: program.basicStudySemesters,
     bilingual: program.bilingual,
@@ -42,6 +44,7 @@ export function mapProgram(program: CurriculumProgramRecord) {
     name: program.name,
     regularSemesters: program.regularSemesters,
     sourceRefs: mapSourceRefs(program.sourceRefs),
+    spoVersion: activeSpoVersion ? mapSpoVersion(activeSpoVersion) : null,
     specializations: program.specializations.map((specialization: CurriculumProgramRecord["specializations"][number]) => ({
       code: specialization.code,
       description: specialization.description,
@@ -49,6 +52,26 @@ export function mapProgram(program: CurriculumProgramRecord) {
       name: specialization.name,
     })),
     totalCredits: program.totalCredits,
+  };
+}
+
+export function mapSpoVersion(spoVersion: {
+  code: string;
+  effectiveDate: Date | null;
+  id: string;
+  isDefault: boolean;
+  label: string;
+  retrievedAt: Date | null;
+  versionNumber: number;
+}) {
+  return {
+    code: spoVersion.code,
+    effectiveDate: spoVersion.effectiveDate?.toISOString() ?? null,
+    id: spoVersion.id,
+    isDefault: spoVersion.isDefault,
+    label: spoVersion.label,
+    retrievedAt: spoVersion.retrievedAt?.toISOString() ?? null,
+    versionNumber: spoVersion.versionNumber,
   };
 }
 

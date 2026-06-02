@@ -62,6 +62,7 @@ function ModulePreview({
 export function CurriculumScreen() {
   const styles = useThemedStyles(baseStyles);
   const controller = useCurriculumController();
+  const activeSpoVersion = controller.selectedSpoVersion ?? controller.program?.spoVersion?.id ?? null;
 
   if (controller.isLoading) {
     return (
@@ -95,7 +96,7 @@ export function CurriculumScreen() {
               </View>
               <View style={styles.heroPill}>
                 <Text style={styles.heroPillText}>
-                  {controller.program?.sourceRefs[0]?.document.versionLabel ?? 'Quellen hinterlegt'}
+                  {controller.program?.spoVersion?.label ?? controller.program?.sourceRefs[0]?.document.versionLabel ?? 'Quellen hinterlegt'}
                 </Text>
               </View>
             </View>
@@ -114,6 +115,22 @@ export function CurriculumScreen() {
                 <Text style={styles.sectionTitle}>Ansicht</Text>
                 <Text style={styles.sectionMeta}>{`${controller.filteredModules.length} Module im Explorer`}</Text>
               </View>
+              {controller.spoVersions.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+                  <View style={styles.filterRow}>
+                    {controller.spoVersions.map((version) => (
+                      <Pressable
+                        key={version.id}
+                        onPress={() => controller.setSelectedSpoVersion(version.id)}
+                        style={[styles.chip, activeSpoVersion === version.id && styles.chipActive]}>
+                        <Text style={[styles.chipText, activeSpoVersion === version.id && styles.chipTextActive]}>
+                          {version.code}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </ScrollView>
+              ) : null}
               <View style={styles.segmentRow}>
                 {[
                   ['semesters', 'Semester'],

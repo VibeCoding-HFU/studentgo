@@ -6,6 +6,7 @@ import {
   listElectiveSlots,
   listModules,
   listProgramSemesters,
+  listSpoVersions,
   listSpecializations,
   listTags,
   parseGraphFilters,
@@ -19,12 +20,16 @@ function queryValue(value: unknown) {
 }
 
 export function registerCurriculumRoutes(app: Express) {
-  app.get("/api/curriculum/programs/ain", async (_request, response) => {
-    response.json(await getProgram(AIN_PROGRAM_CODE));
+  app.get("/api/curriculum/spo-versions", async (_request, response) => {
+    response.json(await listSpoVersions(AIN_PROGRAM_CODE));
   });
 
-  app.get("/api/curriculum/programs/ain/semesters", async (_request, response) => {
-    response.json(await listProgramSemesters(AIN_PROGRAM_CODE));
+  app.get("/api/curriculum/programs/ain", async (request, response) => {
+    response.json(await getProgram(AIN_PROGRAM_CODE, queryValue(request.query.spoVersion)));
+  });
+
+  app.get("/api/curriculum/programs/ain/semesters", async (request, response) => {
+    response.json(await listProgramSemesters(AIN_PROGRAM_CODE, queryValue(request.query.spoVersion)));
   });
 
   app.get("/api/curriculum/graph", async (request, response) => {
@@ -35,6 +40,7 @@ export function registerCurriculumRoutes(app: Express) {
           includeTags: queryValue(request.query.includeTags),
           semester: queryValue(request.query.semester),
           specialization: queryValue(request.query.specialization),
+          spoVersion: queryValue(request.query.spoVersion),
         }),
       ),
     );
@@ -51,6 +57,7 @@ export function registerCurriculumRoutes(app: Express) {
           language: queryValue(request.query.language),
           semester: queryValue(request.query.semester),
           specialization: queryValue(request.query.specialization),
+          spoVersion: queryValue(request.query.spoVersion),
           tag: queryValue(request.query.tag),
         }),
       ),
@@ -58,18 +65,18 @@ export function registerCurriculumRoutes(app: Express) {
   });
 
   app.get("/api/curriculum/modules/:id", async (request, response) => {
-    response.json(await getProgramModule(AIN_PROGRAM_CODE, request.params.id));
+    response.json(await getProgramModule(AIN_PROGRAM_CODE, request.params.id, queryValue(request.query.spoVersion)));
   });
 
-  app.get("/api/curriculum/specializations", async (_request, response) => {
-    response.json(await listSpecializations(AIN_PROGRAM_CODE));
+  app.get("/api/curriculum/specializations", async (request, response) => {
+    response.json(await listSpecializations(AIN_PROGRAM_CODE, queryValue(request.query.spoVersion)));
   });
 
-  app.get("/api/curriculum/elective-slots", async (_request, response) => {
-    response.json(await listElectiveSlots(AIN_PROGRAM_CODE));
+  app.get("/api/curriculum/elective-slots", async (request, response) => {
+    response.json(await listElectiveSlots(AIN_PROGRAM_CODE, queryValue(request.query.spoVersion)));
   });
 
-  app.get("/api/curriculum/tags", async (_request, response) => {
-    response.json(await listTags(AIN_PROGRAM_CODE));
+  app.get("/api/curriculum/tags", async (request, response) => {
+    response.json(await listTags(AIN_PROGRAM_CODE, queryValue(request.query.spoVersion)));
   });
 }

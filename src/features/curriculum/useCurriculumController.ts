@@ -1,7 +1,7 @@
 import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 
 import { fetchCurriculumBundle, fetchCurriculumGraph } from './api';
-import type { CurriculumElectiveSlot, CurriculumGraph, CurriculumModule, CurriculumProgram, CurriculumSemester, CurriculumSpecialization, CurriculumTag } from './types';
+import type { CurriculumElectiveSlot, CurriculumGraph, CurriculumModule, CurriculumProgram, CurriculumSemester, CurriculumSpecialization, CurriculumSpoVersion, CurriculumTag } from './types';
 
 type CurriculumViewMode = 'graph' | 'modules' | 'semesters';
 type ModuleAreaFilter = 'ADVANCED' | 'ALL' | 'BASIC' | 'INTERNSHIP' | 'SPECIALIZATION' | 'THESIS';
@@ -11,6 +11,7 @@ export function useCurriculumController() {
   const [semesters, setSemesters] = useState<CurriculumSemester[]>([]);
   const [modules, setModules] = useState<CurriculumModule[]>([]);
   const [specializations, setSpecializations] = useState<CurriculumSpecialization[]>([]);
+  const [spoVersions, setSpoVersions] = useState<CurriculumSpoVersion[]>([]);
   const [tags, setTags] = useState<CurriculumTag[]>([]);
   const [graph, setGraph] = useState<CurriculumGraph | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -19,6 +20,7 @@ export function useCurriculumController() {
   const [graphError, setGraphError] = useState('');
   const [viewMode, setViewMode] = useState<CurriculumViewMode>('semesters');
   const [selectedSpecialization, setSelectedSpecialization] = useState<string>('ALL');
+  const [selectedSpoVersion, setSelectedSpoVersionState] = useState<string | null>(null);
   const [selectedSemester, setSelectedSemester] = useState<number | 'ALL'>('ALL');
   const [selectedArea, setSelectedArea] = useState<ModuleAreaFilter>('ALL');
   const [selectedCredits, setSelectedCredits] = useState<number | 'ALL'>('ALL');
@@ -35,18 +37,30 @@ export function useCurriculumController() {
     setError('');
 
     try {
-      const bundle = await fetchCurriculumBundle();
+      const bundle = await fetchCurriculumBundle(selectedSpoVersion);
+      const activeSpoVersion = bundle.program.spoVersion?.id ?? bundle.spoVersions.find((version) => version.isDefault)?.id ?? bundle.spoVersions[0]?.id ?? null;
+
       setProgram(bundle.program);
       setSemesters(bundle.semesters);
       setModules(bundle.modules);
       setSpecializations(bundle.specializations);
+      setSpoVersions(bundle.spoVersions);
       setTags(bundle.tags);
+      setSelectedModuleId(null);
+
+      if (!selectedSpoVersion && activeSpoVersion) {
+        setSelectedSpoVersionState(activeSpoVersion);
+      }
+
+      setSelectedSpecialization((current) =>
+        current !== 'ALL' && !bundle.specializations.some((specialization) => specialization.code === current) ? 'ALL' : current,
+      );
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Curriculum konnte nicht geladen werden.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [selectedSpoVersion]);
 
   const loadGraph = useCallback(async () => {
     setGraphLoading(true);
@@ -58,6 +72,7 @@ export function useCurriculumController() {
           includeTags: includeGraphTags,
           semester: typeof selectedSemester === 'number' ? selectedSemester : null,
           specialization: selectedSpecialization === 'ALL' ? null : selectedSpecialization,
+          spoVersion: selectedSpoVersion,
         }),
       );
     } catch (caughtError) {
@@ -65,7 +80,7 @@ export function useCurriculumController() {
     } finally {
       setGraphLoading(false);
     }
-  }, [includeGraphTags, selectedSemester, selectedSpecialization]);
+  }, [includeGraphTags, selectedSemester, selectedSpecialization, selectedSpoVersion]);
 
   useEffect(() => {
     loadBundle();
@@ -200,6 +215,7 @@ export function useCurriculumController() {
     selectedModule,
     selectedSemester,
     selectedSpecialization,
+    selectedSpoVersion,
     selectedTag,
     semesters,
     setCatalogOnly: (value: boolean) => startTransition(() => setCatalogOnly(value)),
@@ -211,9 +227,18 @@ export function useCurriculumController() {
     setSelectedModuleId,
     setSelectedSemester: (value: number | 'ALL') => startTransition(() => setSelectedSemester(value)),
     setSelectedSpecialization: (value: string) => startTransition(() => setSelectedSpecialization(value)),
+    setSelectedSpoVersion: (value: string) =>
+      startTransition(() => {
+        setSelectedSpoVersionState(value);
+        setSelectedSemester('ALL');
+        setSelectedSpecialization('ALL');
+        setCatalogOnly(false);
+        setSelectedModuleId(null);
+      }),
     setSelectedTag: (value: string) => startTransition(() => setSelectedTag(value)),
     setViewMode: (value: CurriculumViewMode) => startTransition(() => setViewMode(value)),
     specializations,
+    spoVersions,
     spotlightTags,
     viewMode,
     catalogOnly,

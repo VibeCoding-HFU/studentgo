@@ -1,4 +1,4 @@
-type AssessmentSeed = {
+export type AssessmentSeed = {
   category: "COURSEWORK" | "EXAM";
   code: string;
   credits?: number;
@@ -6,14 +6,14 @@ type AssessmentSeed = {
   label: string;
 };
 
-type CourseSeed = {
+export type CourseSeed = {
   kindCode: string;
   kindLabel: string;
   title: string;
   weeklyHours?: number;
 };
 
-type SourceRefSeed = {
+export type SourceRefSeed = {
   documentId: string;
   locator?: string;
   note?: string;
@@ -21,7 +21,7 @@ type SourceRefSeed = {
   pageStart: number;
 };
 
-type ModuleSeed = {
+export type ModuleSeed = {
   area: "ADVANCED" | "BASIC" | "INTERNSHIP" | "SPECIALIZATION" | "THESIS";
   assessments: AssessmentSeed[];
   contactHours?: number;
@@ -44,7 +44,7 @@ type ModuleSeed = {
   workloadHours?: number;
 };
 
-type ElectiveSlotSeed = {
+export type ElectiveSlotSeed = {
   candidateModuleIds?: string[];
   credits: number;
   description: string;
@@ -101,7 +101,7 @@ export const curriculumSeed = {
     {
       effectiveDate: new Date("2026-02-24T00:00:00.000Z"),
       fileName: "AllgemeinerTeil_Bachelor_aktuell_23032026.pdf",
-      filePath: "catalog/AllgemeinerTeil_Bachelor_aktuell_23032026.pdf",
+      filePath: "catalog/SPO14/AllgemeinerTeil_Bachelor_aktuell_23032026.pdf",
       id: "HFU_BACHELOR_SPO_2026",
       pageCount: 32,
       programCode: "AIN",
@@ -114,7 +114,7 @@ export const curriculumSeed = {
     {
       effectiveDate: new Date("2026-02-24T00:00:00.000Z"),
       fileName: "Allgemeine_Informatik_SPO-BT.pdf",
-      filePath: "catalog/Allgemeine_Informatik_SPO-BT.pdf",
+      filePath: "catalog/SPO14/Allgemeine_Informatik_SPO-BT.pdf",
       id: "AIN_SPO_BT_2026_V14",
       pageCount: 7,
       programCode: "AIN",
@@ -126,7 +126,7 @@ export const curriculumSeed = {
     },
     {
       fileName: "AIN_Modulkatalog-Allgemeine-Informatik.pdf",
-      filePath: "catalog/AIN_Modulkatalog-Allgemeine-Informatik.pdf",
+      filePath: "catalog/SPO14/AIN_Modulkatalog-Allgemeine-Informatik.pdf",
       id: "AIN_MODULE_CATALOG_2026",
       pageCount: 67,
       programCode: "AIN",
@@ -882,3 +882,5 @@ export const curriculumSeed = {
 };
 
 export type CurriculumSeedData = typeof curriculumSeed;
+
+export default { curriculumSeed };

@@ -13,32 +13,42 @@ export type CurriculumSourceRef = {
   pageStart: number;
 };
 
+export type CurriculumSpoVersion = {
+  code: string;
+  effectiveDate: string | null;
+  id: string;
+  isDefault: boolean;
+  label: string;
+  retrievedAt: string | null;
+  versionNumber: number;
+};
+
 export type CurriculumModule = {
   area: string;
-  assessments: Array<{
+  assessments: {
     category: string;
     code: string;
     credits?: number | null;
     description?: string | null;
     label: string;
-  }>;
+  }[];
   contactHours?: number | null;
-  courses: Array<{
+  courses: {
     kindCode: string;
     kindLabel: string;
     title: string;
     weeklyHours?: number | null;
-  }>;
+  }[];
   credits: number;
   duration?: string | null;
   frequency?: string | null;
   id: string;
   language?: string | null;
-  prerequisiteModules: Array<{
+  prerequisiteModules: {
     id: string;
     semesterNumber: number | null;
     title: string;
-  }>;
+  }[];
   prerequisites: string[];
   semester: {
     credits: number;
@@ -46,17 +56,17 @@ export type CurriculumModule = {
     title: string;
   } | null;
   sourceRefs: CurriculumSourceRef[];
-  specializations: Array<{
+  specializations: {
     code: string;
     id: string;
     name: string;
-  }>;
+  }[];
   status: string;
-  tags: Array<{
+  tags: {
     category: string;
     id: string;
     label: string;
-  }>;
+  }[];
   title: string;
   workloadHours?: number | null;
 };
@@ -64,14 +74,14 @@ export type CurriculumModule = {
 export type CurriculumSemester = {
   area: string;
   credits: number;
-  electiveSlots: Array<{
-    candidateModules: Array<{
+  electiveSlots: {
+    candidateModules: {
       area: string;
       id: string;
       semesterNumber: number | null;
       specializations: string[];
       title: string;
-    }>;
+    }[];
     credits: number;
     description?: string | null;
     id: string;
@@ -84,7 +94,7 @@ export type CurriculumSemester = {
     };
     sourceRefs: CurriculumSourceRef[];
     status: string;
-  }>;
+  }[];
   id: number;
   modules: CurriculumModule[];
   number: number;
@@ -100,12 +110,13 @@ export type CurriculumProgram = {
   name: string;
   regularSemesters: number;
   sourceRefs: CurriculumSourceRef[];
-  specializations: Array<{
+  spoVersion: CurriculumSpoVersion | null;
+  specializations: {
     code: string;
     description?: string | null;
     id: string;
     name: string;
-  }>;
+  }[];
   totalCredits: number;
 };
 
@@ -122,11 +133,11 @@ export type CurriculumSpecialization = {
   code: string;
   description?: string | null;
   id: string;
-  modules: Array<{
+  modules: {
     id: string;
     semesterNumber: number | null;
     title: string;
-  }>;
+  }[];
   name: string;
 };
 
@@ -158,6 +169,7 @@ export type CurriculumGraph = {
       includeTags: boolean;
       semester: number | null;
       specialization: string | null;
+      spoVersion: string;
     };
     sourceRefs: CurriculumSourceRef[];
     stats: {

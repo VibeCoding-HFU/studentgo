@@ -267,7 +267,7 @@ export function CurriculumGraph({
             })}
             {Array.from(layout.positionedNodes.values()).map(({ node, x, y, width, height }) => {
               const colors = nodeColors(node);
-              const interactionProps = Platform.OS === 'web'
+              const interactionProps: { onClick?: () => void; onPress?: () => void } = Platform.OS === 'web'
                 ? { onClick: () => handleNodePress(node) }
                 : { onPress: () => handleNodePress(node) };
 

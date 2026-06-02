@@ -80,6 +80,9 @@ const programArgs = {
     specializations: {
       orderBy: { code: "asc" },
     },
+    spoVersions: {
+      orderBy: { versionNumber: "desc" },
+    },
   },
 } satisfies Prisma.StudyProgramDefaultArgs;
 
@@ -160,38 +163,82 @@ export type CurriculumModulePrerequisiteRecord = Prisma.CurriculumModulePrerequi
 export const curriculumRepository = {
   getProgramByCode(code: string) {
     return prisma.studyProgram.findUnique({
-      ...programArgs,
       where: { code },
     });
   },
 
-  getModuleById(studyProgramId: string, id: string) {
+  getProgramSnapshotById(id: string, spoVersionId: string) {
+    return prisma.studyProgram.findUnique({
+      include: {
+        sourceRefs: {
+          include: sourceRefInclude,
+          orderBy: { pageStart: "asc" },
+          where: { spoVersionId },
+        },
+        specializations: {
+          orderBy: { code: "asc" },
+          where: { spoVersionId },
+        },
+        spoVersions: {
+          orderBy: { versionNumber: "desc" },
+          where: { id: spoVersionId },
+        },
+      },
+      where: { id },
+    });
+  },
+
+  getDefaultSpoVersion(studyProgramId: string) {
+    return prisma.curriculumSpoVersion.findFirst({
+      orderBy: [{ isDefault: "desc" }, { versionNumber: "desc" }],
+      where: { studyProgramId },
+    });
+  },
+
+  getSpoVersionByCode(studyProgramId: string, code: string) {
+    return prisma.curriculumSpoVersion.findFirst({
+      where: {
+        studyProgramId,
+        OR: [{ code }, { id: code }],
+      },
+    });
+  },
+
+  listSpoVersions(studyProgramId: string) {
+    return prisma.curriculumSpoVersion.findMany({
+      orderBy: { versionNumber: "desc" },
+      where: { studyProgramId },
+    });
+  },
+
+  getModuleById(studyProgramId: string, spoVersionId: string, id: string) {
     return prisma.curriculumModule.findFirst({
       ...curriculumModuleArgs,
       where: {
         id,
+        spoVersionId,
         studyProgramId,
       },
     });
   },
 
-  listElectiveSlots(studyProgramId: string) {
+  listElectiveSlots(studyProgramId: string, spoVersionId: string) {
     return prisma.electiveSlot.findMany({
       ...electiveSlotArgs,
       orderBy: [{ semester: { number: "asc" } }, { sortOrder: "asc" }],
-      where: { studyProgramId },
+      where: { spoVersionId, studyProgramId },
     });
   },
 
-  listModules(studyProgramId: string) {
+  listModules(studyProgramId: string, spoVersionId: string) {
     return prisma.curriculumModule.findMany({
       ...curriculumModuleArgs,
       orderBy: [{ semester: { number: "asc" } }, { sortOrder: "asc" }, { title: "asc" }],
-      where: { studyProgramId },
+      where: { spoVersionId, studyProgramId },
     });
   },
 
-  listModulePrerequisites(studyProgramId: string) {
+  listModulePrerequisites(studyProgramId: string, spoVersionId: string) {
     return prisma.curriculumModulePrerequisite.findMany({
       include: {
         sourceModule: {
@@ -213,29 +260,30 @@ export const curriculumRepository = {
       ],
       where: {
         sourceModule: {
+          spoVersionId,
           studyProgramId,
         },
       },
     });
   },
 
-  listSemesters(studyProgramId: string) {
+  listSemesters(studyProgramId: string, spoVersionId: string) {
     return prisma.programSemester.findMany({
       ...semesterArgs,
       orderBy: { number: "asc" },
-      where: { studyProgramId },
+      where: { spoVersionId, studyProgramId },
     });
   },
 
-  listSpecializations(studyProgramId: string) {
+  listSpecializations(studyProgramId: string, spoVersionId: string) {
     return prisma.specialization.findMany({
       ...specializationArgs,
       orderBy: { code: "asc" },
-      where: { studyProgramId },
+      where: { spoVersionId, studyProgramId },
     });
   },
 
-  listTags(studyProgramId: string) {
+  listTags(studyProgramId: string, spoVersionId: string) {
     return prisma.curriculumTag.findMany({
       ...tagArgs,
       orderBy: [{ category: "asc" }, { label: "asc" }],
@@ -243,6 +291,7 @@ export const curriculumRepository = {
         modules: {
           some: {
             module: {
+              spoVersionId,
               studyProgramId,
             },
           },

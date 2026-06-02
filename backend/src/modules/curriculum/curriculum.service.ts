@@ -5,6 +5,7 @@ import {
   mapProgram,
   mapSemester,
   mapSpecialization,
+  mapSpoVersion,
   mapTag,
 } from "./curriculum.mapper";
 import {
@@ -20,6 +21,7 @@ type ModuleFilters = {
   language?: string;
   semester?: number;
   specialization?: string;
+  spoVersion?: string;
   tag?: string;
 };
 
@@ -27,6 +29,7 @@ type GraphFilters = {
   includeTags: boolean;
   semester?: number;
   specialization?: string;
+  spoVersion?: string;
 };
 
 type GraphNodeType = "electiveSlot" | "module" | "program" | "semester" | "specialization" | "tag";
@@ -43,6 +46,10 @@ function normalizeFilterValue(value: string) {
 }
 
 function normalizeProgramCode(code: string) {
+  return code.trim().toUpperCase();
+}
+
+function normalizeSpoVersionCode(code: string) {
   return code.trim().toUpperCase();
 }
 
@@ -184,23 +191,42 @@ function addGraphEdge(
   });
 }
 
-async function getProgramRecord(programCode: string) {
+async function getCurriculumScope(programCode: string, spoVersionCode?: string) {
   const program = await curriculumRepository.getProgramByCode(normalizeProgramCode(programCode));
 
   if (!program) {
     throw notFound("Study program not found.");
   }
 
-  return program;
+  const spoVersion = spoVersionCode
+    ? await curriculumRepository.getSpoVersionByCode(program.id, normalizeSpoVersionCode(spoVersionCode))
+    : await curriculumRepository.getDefaultSpoVersion(program.id);
+
+  if (!spoVersion) {
+    throw notFound("SPO version not found.");
+  }
+
+  return { program, spoVersion };
 }
 
-export async function getProgram(programCode: string) {
-  return mapProgram(await getProgramRecord(programCode));
+async function getProgramRecord(programCode: string, spoVersionCode?: string) {
+  const scope = await getCurriculumScope(programCode, spoVersionCode);
+  const program = await curriculumRepository.getProgramSnapshotById(scope.program.id, scope.spoVersion.id);
+
+  if (!program) {
+    throw notFound("Study program not found.");
+  }
+
+  return { program, spoVersion: scope.spoVersion };
 }
 
-export async function getProgramModule(programCode: string, moduleId: string) {
-  const program = await getProgramRecord(programCode);
-  const module = await curriculumRepository.getModuleById(program.id, moduleId);
+export async function getProgram(programCode: string, spoVersionCode?: string) {
+  return mapProgram((await getProgramRecord(programCode, spoVersionCode)).program);
+}
+
+export async function getProgramModule(programCode: string, moduleId: string, spoVersionCode?: string) {
+  const scope = await getCurriculumScope(programCode, spoVersionCode);
+  const module = await curriculumRepository.getModuleById(scope.program.id, scope.spoVersion.id, moduleId);
 
   if (!module) {
     throw notFound("Module not found.");
@@ -210,13 +236,13 @@ export async function getProgramModule(programCode: string, moduleId: string) {
 }
 
 export async function getProgramGraph(programCode: string, filters: GraphFilters) {
-  const program = await getProgramRecord(programCode);
+  const { program, spoVersion } = await getProgramRecord(programCode, filters.spoVersion);
   const [modules, semesters, specializations, electiveSlots, prerequisites] = await Promise.all([
-    curriculumRepository.listModules(program.id),
-    curriculumRepository.listSemesters(program.id),
-    curriculumRepository.listSpecializations(program.id),
-    curriculumRepository.listElectiveSlots(program.id),
-    curriculumRepository.listModulePrerequisites(program.id),
+    curriculumRepository.listModules(program.id, spoVersion.id),
+    curriculumRepository.listSemesters(program.id, spoVersion.id),
+    curriculumRepository.listSpecializations(program.id, spoVersion.id),
+    curriculumRepository.listElectiveSlots(program.id, spoVersion.id),
+    curriculumRepository.listModulePrerequisites(program.id, spoVersion.id),
   ]);
 
   const scopedModules = filterModules(modules, {
@@ -349,6 +375,7 @@ export async function getProgramGraph(programCode: string, filters: GraphFilters
         includeTags: filters.includeTags,
         semester: filters.semester ?? null,
         specialization: filters.specialization ?? null,
+        spoVersion: spoVersion.code,
       },
       sourceRefs: mapProgram(program).sourceRefs,
       stats: {
@@ -361,33 +388,44 @@ export async function getProgramGraph(programCode: string, filters: GraphFilters
   };
 }
 
-export async function listElectiveSlots(programCode: string) {
-  const program = await getProgramRecord(programCode);
-  const slots = await curriculumRepository.listElectiveSlots(program.id);
+export async function listElectiveSlots(programCode: string, spoVersionCode?: string) {
+  const scope = await getCurriculumScope(programCode, spoVersionCode);
+  const slots = await curriculumRepository.listElectiveSlots(scope.program.id, scope.spoVersion.id);
   return slots.map(mapElectiveSlot);
 }
 
 export async function listModules(programCode: string, filters: ModuleFilters) {
-  const program = await getProgramRecord(programCode);
-  const modules = await curriculumRepository.listModules(program.id);
+  const scope = await getCurriculumScope(programCode, filters.spoVersion);
+  const modules = await curriculumRepository.listModules(scope.program.id, scope.spoVersion.id);
   return filterModules(modules, filters).map(mapModule);
 }
 
-export async function listProgramSemesters(programCode: string) {
-  const program = await getProgramRecord(programCode);
-  const semesters = await curriculumRepository.listSemesters(program.id);
+export async function listProgramSemesters(programCode: string, spoVersionCode?: string) {
+  const scope = await getCurriculumScope(programCode, spoVersionCode);
+  const semesters = await curriculumRepository.listSemesters(scope.program.id, scope.spoVersion.id);
   return semesters.map(mapSemester);
 }
 
-export async function listSpecializations(programCode: string) {
-  const program = await getProgramRecord(programCode);
-  const specializations = await curriculumRepository.listSpecializations(program.id);
+export async function listSpecializations(programCode: string, spoVersionCode?: string) {
+  const scope = await getCurriculumScope(programCode, spoVersionCode);
+  const specializations = await curriculumRepository.listSpecializations(scope.program.id, scope.spoVersion.id);
   return specializations.map(mapSpecialization);
 }
 
-export async function listTags(programCode: string) {
-  const program = await getProgramRecord(programCode);
-  const tags = await curriculumRepository.listTags(program.id);
+export async function listSpoVersions(programCode: string) {
+  const program = await curriculumRepository.getProgramByCode(normalizeProgramCode(programCode));
+
+  if (!program) {
+    throw notFound("Study program not found.");
+  }
+
+  const spoVersions = await curriculumRepository.listSpoVersions(program.id);
+  return spoVersions.map(mapSpoVersion);
+}
+
+export async function listTags(programCode: string, spoVersionCode?: string) {
+  const scope = await getCurriculumScope(programCode, spoVersionCode);
+  const tags = await curriculumRepository.listTags(scope.program.id, scope.spoVersion.id);
   return tags.map(mapTag);
 }
 
@@ -396,6 +434,7 @@ export function parseGraphFilters(filters: Record<string, string | undefined>): 
     includeTags: filters.includeTags === "true",
     semester: parseOptionalNumber(filters.semester, "Invalid semester filter."),
     specialization: filters.specialization,
+    spoVersion: filters.spoVersion,
   };
 }
 
@@ -407,6 +446,7 @@ export function parseModuleFilters(filters: Record<string, string | undefined>):
     language: filters.language,
     semester: parseOptionalNumber(filters.semester, "Invalid semester filter."),
     specialization: filters.specialization,
+    spoVersion: filters.spoVersion,
     tag: filters.tag,
   };
 }

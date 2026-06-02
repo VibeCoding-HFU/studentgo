@@ -395,6 +395,8 @@ model CurriculumDocument {
   id            String                 @id
   type          CurriculumDocumentType
   programCode   String
+  spoVersionId  String?
+  spoVersion    CurriculumSpoVersion?  @relation(fields: [spoVersionId], references: [id], onDelete: SetNull)
   title         String
   versionLabel  String?
   effectiveDate DateTime?
@@ -408,6 +410,7 @@ model CurriculumDocument {
   updatedAt     DateTime               @default(now()) @updatedAt
 
   @@index([programCode, type])
+  @@index([spoVersionId, type])
 }
 
 model StudyProgram {
@@ -424,15 +427,42 @@ model StudyProgram {
   modules                CurriculumModule[]
   specializations        Specialization[]
   electiveSlots          ElectiveSlot[]
+  spoVersions            CurriculumSpoVersion[]
   sourceRefs             CurriculumSourceRef[]
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @default(now()) @updatedAt
+}
+
+model CurriculumSpoVersion {
+  id              String                @id
+  studyProgramId  String
+  studyProgram    StudyProgram          @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  code            String
+  label           String
+  versionNumber   Int
+  effectiveDate   DateTime?
+  retrievedAt     DateTime?
+  isDefault       Boolean               @default(false)
+  documents       CurriculumDocument[]
+  semesters       ProgramSemester[]
+  modules         CurriculumModule[]
+  specializations Specialization[]
+  electiveSlots   ElectiveSlot[]
+  sourceRefs      CurriculumSourceRef[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @default(now()) @updatedAt
+
+  @@unique([studyProgramId, code])
+  @@unique([studyProgramId, versionNumber])
+  @@index([studyProgramId, isDefault])
 }
 
 model ProgramSemester {
   id             Int              @id @default(autoincrement())
   studyProgramId String
   studyProgram   StudyProgram     @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  spoVersionId   String?
+  spoVersion     CurriculumSpoVersion? @relation(fields: [spoVersionId], references: [id], onDelete: Cascade)
   number         Int
   title          String
   credits        Int
@@ -442,13 +472,16 @@ model ProgramSemester {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @default(now()) @updatedAt
 
-  @@unique([studyProgramId, number])
+  @@unique([studyProgramId, spoVersionId, number])
+  @@index([spoVersionId])
 }
 
 model CurriculumModule {
   id                       String                           @id
   studyProgramId           String
   studyProgram             StudyProgram                     @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  spoVersionId             String?
+  spoVersion               CurriculumSpoVersion?            @relation(fields: [spoVersionId], references: [id], onDelete: Cascade)
   semesterId               Int?
   semester                 ProgramSemester?                 @relation(fields: [semesterId], references: [id], onDelete: SetNull)
   title                    String
@@ -474,9 +507,10 @@ model CurriculumModule {
   createdAt                DateTime                         @default(now())
   updatedAt                DateTime                         @default(now()) @updatedAt
 
-  @@index([studyProgramId, semesterId, sortOrder])
+  @@index([studyProgramId, spoVersionId, semesterId, sortOrder])
   @@index([title])
   @@index([area])
+  @@index([spoVersionId])
 }
 
 model CurriculumCourse {
@@ -525,6 +559,8 @@ model Specialization {
   id             String                         @id
   studyProgramId String
   studyProgram   StudyProgram                   @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  spoVersionId   String?
+  spoVersion     CurriculumSpoVersion?          @relation(fields: [spoVersionId], references: [id], onDelete: Cascade)
   code           String
   name           String
   description    String?
@@ -532,7 +568,8 @@ model Specialization {
   createdAt      DateTime                       @default(now())
   updatedAt      DateTime                       @default(now()) @updatedAt
 
-  @@unique([studyProgramId, code])
+  @@unique([studyProgramId, spoVersionId, code])
+  @@index([spoVersionId])
 }
 
 model CurriculumTag {
@@ -570,6 +607,8 @@ model ElectiveSlot {
   id               String                         @id
   studyProgramId   String
   studyProgram     StudyProgram                   @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
+  spoVersionId     String?
+  spoVersion       CurriculumSpoVersion?          @relation(fields: [spoVersionId], references: [id], onDelete: Cascade)
   semesterId       Int
   semester         ProgramSemester                @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   name             String
@@ -583,7 +622,8 @@ model ElectiveSlot {
   createdAt        DateTime                       @default(now())
   updatedAt        DateTime                       @default(now()) @updatedAt
 
-  @@index([studyProgramId, semesterId, sortOrder])
+  @@index([studyProgramId, spoVersionId, semesterId, sortOrder])
+  @@index([spoVersionId])
 }
 
 model ElectiveSlotCandidateModule {
@@ -600,6 +640,8 @@ model CurriculumSourceRef {
   id             Int                @id @default(autoincrement())
   documentId     String
   document       CurriculumDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  spoVersionId   String?
+  spoVersion     CurriculumSpoVersion? @relation(fields: [spoVersionId], references: [id], onDelete: Cascade)
   studyProgramId String?
   studyProgram   StudyProgram?      @relation(fields: [studyProgramId], references: [id], onDelete: Cascade)
   moduleId       String?
@@ -614,6 +656,7 @@ model CurriculumSourceRef {
   updatedAt      DateTime           @default(now()) @updatedAt
 
   @@index([documentId, pageStart, pageEnd])
+  @@index([spoVersionId])
   @@index([studyProgramId])
   @@index([moduleId])
   @@index([electiveSlotId])

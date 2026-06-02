@@ -44,10 +44,10 @@ export function validateCurriculumSnapshot(snapshot: CurriculumSnapshot) {
   assertCondition(totalSemesterCredits === snapshot.program.totalCredits, `Expected ${snapshot.program.totalCredits} LP overall, got ${totalSemesterCredits}.`);
 
   const internshipCredits = snapshot.modules
-    .filter((module) => module.id === "ain-praktisches-studiensemester")
+    .filter((module) => module.id.endsWith("praktisches-studiensemester"))
     .reduce((sum, module) => sum + module.credits, 0);
   const thesisCredits = snapshot.modules
-    .filter((module) => module.id === "ain-thesis")
+    .filter((module) => module.id.endsWith("thesis"))
     .reduce((sum, module) => sum + module.credits, 0);
 
   assertCondition(internshipCredits === 30, `Expected 30 LP for the internship block, got ${internshipCredits}.`);
