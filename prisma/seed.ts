@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { prisma } from "../backend/src/prisma";
+import { clearCurriculumData, seedCurriculumData } from "./curriculum-seed";
 
 async function main() {
   await prisma.managementChangeRequest.deleteMany();
@@ -14,8 +15,13 @@ async function main() {
   await prisma.studyModule.deleteMany();
   await prisma.userPublicKey.deleteMany();
   await prisma.contact.deleteMany();
+  await clearCurriculumData(prisma);
 
   console.log("Cleared StudentGo sample data.");
+
+  await seedCurriculumData(prisma);
+
+  console.log("Seeded curriculum data.");
 }
 
 main()
