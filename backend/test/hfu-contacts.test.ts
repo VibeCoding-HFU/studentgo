@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decodeProtectedEmail, filterHfuContacts, parseHfuContactsHtml, parseHfuFilters } from "../src/modules/hfu-contacts/hfu-contacts.service";
+import { decodeProtectedEmail, filterHfuContacts, listHfuContacts, parseHfuContactsHtml, parseHfuFilters } from "../src/modules/hfu-contacts/hfu-contacts.service";
 
 const listHtml = `
 <span class="o-highlight-text">1</span>
@@ -21,6 +21,25 @@ const listHtml = `
   Fakultaet I: Computer Science &amp; Applications
   <span class="c-facet-option__count">114</span>
 </a>`;
+
+function contactsHtml(totalCount: number, startIndex: number, contactCount: number) {
+  return `
+<span class="o-highlight-text">${totalCount}</span>
+${Array.from({ length: contactCount }, (_value, index) => {
+  const contactIndex = startIndex + index;
+
+  return `
+<article class="c-card c-card--outline c-card--no-image">
+  <div class="c-card__body">
+    <h2 class="c-card__title">
+      <a class="c-card__link" href="https://www.hs-furtwangen.de/personen/profil/${contactIndex}-contact-${contactIndex}">
+        Person ${contactIndex}
+      </a>
+    </h2>
+  </div>
+</article>`;
+}).join("")}`;
+}
 
 describe("HFU contacts parser", () => {
   it("decodes TYPO3 protected email tokens", () => {
@@ -59,5 +78,33 @@ describe("HFU contacts parser", () => {
 
     assert.equal(filterHfuContacts(contacts, "computer").length, 1);
     assert.equal(filterHfuContacts(contacts, "not-present").length, 0);
+  });
+
+  it("returns only the requested first contact batch", async () => {
+    const originalFetch = globalThis.fetch;
+    const requestedUrls: string[] = [];
+
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      requestedUrls.push(String(url));
+
+      return {
+        ok: true,
+        status: 200,
+        text: async () => contactsHtml(60, 1, 30),
+      };
+    }) as typeof fetch;
+
+    try {
+      const result = await listHfuContacts(null, null, { limit: 10, offset: 0 });
+
+      assert.equal(result.contacts.length, 10);
+      assert.equal(result.contacts[0].fullName, "Person 1");
+      assert.equal(result.contacts[9].fullName, "Person 10");
+      assert.equal(result.hasMore, true);
+      assert.equal(result.totalCount, 60);
+      assert.equal(requestedUrls.length, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

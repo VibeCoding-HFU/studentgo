@@ -38,5 +38,7 @@ export type HfuContactFilter = {
 export type HfuContactsResult = {
   contacts: HfuContactPerson[];
   filters: HfuContactFilter[];
+  hasMore: boolean;
   sourceUrl: string;
+  totalCount: number;
 };

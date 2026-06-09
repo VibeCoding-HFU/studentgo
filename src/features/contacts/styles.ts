@@ -55,4 +55,7 @@ export const baseStyles = StyleSheet.create({
   hfuDetails: { borderTopColor: '#E4E7EC', borderTopWidth: 1, marginTop: 10, paddingTop: 8 },
   linkButton: { alignItems: 'center', flexDirection: 'row', gap: 6, marginTop: 8, minHeight: 34 },
   linkButtonText: { color: '#00684F', fontSize: 13, fontWeight: '800' },
+  loadMoreButton: { alignItems: 'center', backgroundColor: '#E6F4EF', borderColor: '#00684F', borderRadius: 8, borderWidth: 1, flexDirection: 'row', gap: 8, justifyContent: 'center', minHeight: 46, paddingHorizontal: 14 },
+  loadMoreButtonDisabled: { opacity: 0.55 },
+  loadMoreButtonText: { color: '#00684F', fontSize: 14, fontWeight: '800' },
 });

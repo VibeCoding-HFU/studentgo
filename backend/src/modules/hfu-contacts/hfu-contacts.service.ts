@@ -27,7 +27,9 @@ export type HfuContactFilter = {
 export type HfuContactsResult = {
   contacts: HfuContactPerson[];
   filters: HfuContactFilter[];
+  hasMore: boolean;
   sourceUrl: string;
+  totalCount: number;
 };
 
 const HFU_PEOPLE_URL = "https://www.hs-furtwangen.de/personen";
@@ -35,6 +37,7 @@ const AJAX_TYPE = "7384";
 const PAGE_SIZE = 30;
 const MAX_PAGES = 30;
 const cache = new Map<string, { expiresAt: number; value: HfuContactsResult }>();
+const htmlCache = new Map<string, { expiresAt: number; value: string }>();
 
 function cleanText(value?: string | null) {
   return decodeHtml(value ?? "")
@@ -217,6 +220,12 @@ function contactsUrl(page: number, solrFilter?: string | null) {
 }
 
 async function fetchHtml(url: string) {
+  const cached = htmlCache.get(url);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   const response = await fetch(url, {
     headers: {
       Accept: "text/html",
@@ -228,7 +237,10 @@ async function fetchHtml(url: string) {
     throw new Error(`HFU contacts request failed with status ${response.status}`);
   }
 
-  return response.text();
+  const html = await response.text();
+
+  htmlCache.set(url, { expiresAt: Date.now() + 30 * 60 * 1000, value: html });
+  return html;
 }
 
 function uniqueContacts(contacts: HfuContactPerson[]) {
@@ -262,8 +274,17 @@ export function filterHfuContacts(contacts: HfuContactPerson[], query: string) {
   );
 }
 
-export async function listHfuContacts(solrFilter?: string | null, activeFilterFallback?: HfuContactFilter | null) {
-  const cacheKey = solrFilter ?? "all";
+type ListHfuContactsOptions = {
+  limit?: number;
+  offset?: number;
+};
+
+export async function listHfuContacts(solrFilter?: string | null, activeFilterFallback?: HfuContactFilter | null, options: ListHfuContactsOptions = {}) {
+  const requestedOffset = Number.isFinite(options.offset) ? options.offset! : 0;
+  const requestedLimit = Number.isFinite(options.limit) ? options.limit! : 10;
+  const offset = Math.max(0, requestedOffset);
+  const limit = Math.min(50, Math.max(1, requestedLimit));
+  const cacheKey = `${solrFilter ?? "all"}:${offset}:${limit}`;
   const cached = cache.get(cacheKey);
 
   if (cached && cached.expiresAt > Date.now()) {
@@ -276,12 +297,16 @@ export async function listHfuContacts(solrFilter?: string | null, activeFilterFa
   const activeFilter = solrFilter ? filters.find((filter) => filter.solrFilter === solrFilter) ?? activeFilterFallback ?? null : null;
   const totalCount = getTotalCount(firstPageHtml);
   const pageCount = Math.min(MAX_PAGES, Math.max(1, Math.ceil(totalCount / PAGE_SIZE)));
-  const pageUrls = Array.from({ length: pageCount - 1 }, (_value, index) => contactsUrl(index + 2, solrFilter));
-  const pageHtml = await Promise.all(pageUrls.map((url) => fetchHtml(url)));
-  const contacts = uniqueContacts(
-    [firstPageHtml, ...pageHtml].flatMap((html, index) => parseHfuContactsHtml(html, index === 0 ? firstPageUrl : pageUrls[index - 1], activeFilter)),
+  const startPage = Math.min(pageCount, Math.floor(offset / PAGE_SIZE) + 1);
+  const endPage = Math.min(pageCount, Math.floor((offset + limit - 1) / PAGE_SIZE) + 1);
+  const pageNumbers = Array.from({ length: endPage - startPage + 1 }, (_value, index) => startPage + index);
+  const pageUrls = pageNumbers.map((page) => contactsUrl(page, solrFilter));
+  const pageHtml = await Promise.all(pageUrls.map((url) => (url === firstPageUrl ? firstPageHtml : fetchHtml(url))));
+  const contacts = uniqueContacts(pageHtml.flatMap((html, index) => parseHfuContactsHtml(html, pageUrls[index], activeFilter))).slice(
+    offset - (startPage - 1) * PAGE_SIZE,
+    offset - (startPage - 1) * PAGE_SIZE + limit,
   );
-  const value = { contacts, filters, sourceUrl: HFU_PEOPLE_URL };
+  const value = { contacts, filters, hasMore: offset + contacts.length < totalCount, sourceUrl: HFU_PEOPLE_URL, totalCount };
 
   cache.set(cacheKey, { expiresAt: Date.now() + 30 * 60 * 1000, value });
   return value;
