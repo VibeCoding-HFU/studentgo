@@ -16,6 +16,7 @@ const categoryLabels: Record<HfuContactFilter['category'], string> = {
   function: 'Funktion',
   service: 'Services',
 };
+const CONTACT_BATCH_SIZE = 10;
 
 function initials(name: string) {
   return name
@@ -37,26 +38,45 @@ export function HfuContactsPanel({ styles }: HfuContactsPanelProps) {
   const [activeFilter, setActiveFilter] = useState<HfuContactFilter | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
 
-  const loadContacts = useCallback(async (filter: HfuContactFilter | null) => {
+  const loadContacts = useCallback(async (filter: HfuContactFilter | null, offset: number, replace = false) => {
     setError('');
-    setLoading(true);
+    setLoading(offset === 0);
+    setLoadingMore(offset > 0);
 
     try {
-      const result = await fetchHfuContacts(filter);
-      setContacts(result.contacts);
+      const result = await fetchHfuContacts(filter, { limit: CONTACT_BATCH_SIZE, offset });
+      const isFullLegacyResponse = result.contacts.length > CONTACT_BATCH_SIZE;
+      const pageContacts = isFullLegacyResponse
+        ? result.contacts.slice(offset, offset + CONTACT_BATCH_SIZE)
+        : result.contacts.slice(0, CONTACT_BATCH_SIZE);
+      const nextTotalCount = result.totalCount ?? result.contacts.length;
+
+      setContacts((current) => {
+        const nextContacts = replace ? pageContacts : [...current, ...pageContacts];
+
+        return nextContacts.filter((contact, index, candidates) => candidates.findIndex((candidate) => candidate.id === contact.id) === index);
+      });
       setFilters((current) => (filter && current.length > 0 ? current : result.filters));
+      setHasMore(result.hasMore ?? offset + pageContacts.length < nextTotalCount);
+      setTotalCount(nextTotalCount);
     } catch {
       setError('Die HFU-Kontakte konnten gerade nicht geladen werden.');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, []);
 
   useEffect(() => {
-    loadContacts(activeFilter);
+    setContacts([]);
+    setExpandedId(null);
+    loadContacts(activeFilter, 0, true);
   }, [activeFilter, loadContacts]);
 
   const groupedFilters = useMemo(
@@ -68,6 +88,7 @@ export function HfuContactsPanel({ styles }: HfuContactsPanelProps) {
     [filters],
   );
   const visibleContacts = useMemo(() => filterHfuContacts(contacts, query), [contacts, query]);
+  const canLoadMore = hasMore && !loading && !loadingMore;
 
   return (
     <View>
@@ -129,6 +150,11 @@ export function HfuContactsPanel({ styles }: HfuContactsPanelProps) {
       {loading ? <Text style={styles.empty}>HFU-Kontakte werden geladen ...</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {!loading && !error && visibleContacts.length === 0 ? <Text style={styles.empty}>Keine passenden Kontakte gefunden.</Text> : null}
+      {!loading && contacts.length > 0 ? (
+        <Text style={styles.empty}>
+          {contacts.length} von {totalCount} HFU-Kontakten geladen.
+        </Text>
+      ) : null}
 
       <View style={styles.contactList}>
         {visibleContacts.map((contact) => {
@@ -164,6 +190,18 @@ export function HfuContactsPanel({ styles }: HfuContactsPanelProps) {
           );
         })}
       </View>
+
+      {hasMore ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={!canLoadMore}
+          style={[styles.loadMoreButton, !canLoadMore ? styles.loadMoreButtonDisabled : null]}
+          onPress={() => loadContacts(activeFilter, contacts.length)}
+        >
+          <MaterialIcons name="expand-more" size={22} color="#00684F" />
+          <Text style={styles.loadMoreButtonText}>{loadingMore ? 'Weitere Kontakte werden geladen ...' : '10 weitere Kontakte laden'}</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

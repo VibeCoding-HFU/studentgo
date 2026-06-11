@@ -1,12 +1,17 @@
 import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 
+import { getBackendUrl } from '@/constants/api';
 import { fetchCurriculumBundle, fetchCurriculumGraph } from './api';
 import type { CurriculumElectiveSlot, CurriculumGraph, CurriculumModule, CurriculumProgram, CurriculumSemester, CurriculumSpecialization, CurriculumSpoVersion, CurriculumTag } from './types';
 
 type CurriculumViewMode = 'graph' | 'modules' | 'semesters';
 type ModuleAreaFilter = 'ADVANCED' | 'ALL' | 'BASIC' | 'INTERNSHIP' | 'SPECIALIZATION' | 'THESIS';
 
+const backendRetryIntervalMs = 5000;
+const backendRetryTimeoutMs = 4000;
+
 export function useCurriculumController() {
+  const backendUrl = useMemo(() => getBackendUrl(), []);
   const [program, setProgram] = useState<CurriculumProgram | null>(null);
   const [semesters, setSemesters] = useState<CurriculumSemester[]>([]);
   const [modules, setModules] = useState<CurriculumModule[]>([]);
@@ -89,6 +94,62 @@ export function useCurriculumController() {
   useEffect(() => {
     loadGraph();
   }, [loadGraph]);
+
+  useEffect(() => {
+    if (!error && !graphError) {
+      return undefined;
+    }
+
+    let isMounted = true;
+    let retryRunning = false;
+
+    async function isBackendReachable() {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), backendRetryTimeoutMs);
+
+      try {
+        const response = await fetch(`${backendUrl}/health`, { signal: controller.signal });
+
+        return response.ok;
+      } catch {
+        return false;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    async function retryWhenBackendReturns() {
+      if (retryRunning) {
+        return;
+      }
+
+      retryRunning = true;
+
+      try {
+        if (!await isBackendReachable() || !isMounted) {
+          return;
+        }
+
+        if (error) {
+          await loadBundle();
+        }
+
+        if (graphError && isMounted) {
+          await loadGraph();
+        }
+      } finally {
+        retryRunning = false;
+      }
+    }
+
+    retryWhenBackendReturns();
+    const interval = setInterval(retryWhenBackendReturns, backendRetryIntervalMs);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [backendUrl, error, graphError, loadBundle, loadGraph]);
 
   const spotlightTags = useMemo(
     () =>

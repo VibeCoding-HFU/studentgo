@@ -1,6 +1,6 @@
 import { usePathname, useRouter } from 'expo-router';
 import React, { PropsWithChildren, useCallback, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 
@@ -15,6 +15,18 @@ const swipeDistance = 58;
 const swipeVelocity = 420;
 
 export function SwipeableTabView({ children }: PropsWithChildren) {
+  if (Platform.OS === 'web') {
+    return (
+      <View style={styles.container}>
+        {children}
+      </View>
+    );
+  }
+
+  return <NativeSwipeableTabView>{children}</NativeSwipeableTabView>;
+}
+
+function NativeSwipeableTabView({ children }: PropsWithChildren) {
   const { isAdminMode, isManagerMode } = useAuth();
   const pathname = usePathname();
   const router = useRouter();

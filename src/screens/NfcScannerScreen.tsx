@@ -4,16 +4,19 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
+import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { AdvancedCardDetails } from '@/src/components/AdvancedCardDetails';
 import { getNfcAvailability, scanDesfireCard } from '@/src/nfc/desfire';
 import type { DesfireScanResult, NfcAvailability } from '@/src/nfc/types';
 
 export function NfcScannerScreen() {
+  const styles = useThemedStyles(baseStyles);
   const [availability, setAvailability] = useState<NfcAvailability | null>(null);
   const [result, setResult] = useState<DesfireScanResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [error, setError] = useState('');
+  const isWeb = Platform.OS === 'web';
 
   const loadAvailability = useCallback(async () => {
     try {
@@ -28,6 +31,10 @@ export function NfcScannerScreen() {
   }, [loadAvailability]);
 
   const statusText = useMemo(() => {
+    if (isWeb) {
+      return 'NFC ist in der Web-Version nicht verfuegbar. Eine Mensakarte kann hier deshalb nicht ausgelesen werden.';
+    }
+
     if (Platform.OS !== 'android') {
       return 'Android-first: NFC-Scan ist fuer Android vorbereitet.';
     }
@@ -45,10 +52,16 @@ export function NfcScannerScreen() {
     }
 
     return 'Bereit fuer eine MIFARE DESFire EV1 Mensakarte.';
-  }, [availability]);
+  }, [availability, isWeb]);
 
   async function scanCard() {
     setError('');
+
+    if (isWeb) {
+      setError('NFC ist in der Web-Version nicht verfuegbar. Nutze die Android-App, um eine Mensakarte auszulesen.');
+      return;
+    }
+
     setIsScanning(true);
 
     try {
@@ -91,6 +104,16 @@ export function NfcScannerScreen() {
             <Text style={styles.subtitle}>Read-only Analyse fuer eigene DESFire-Karten. Es werden keine Schreib-, Key- oder Authentifizierungsumgehungs-Kommandos verwendet.</Text>
           </View>
 
+          {isWeb ? (
+            <View style={styles.webNotice}>
+              <MaterialIcons name="web-asset-off" size={24} color="#B54708" />
+              <View style={styles.webNoticeTextBlock}>
+                <Text style={styles.webNoticeTitle}>NFC im Web nicht verfuegbar</Text>
+                <Text style={styles.webNoticeText}>Browser koennen die Mensakarte hier nicht ueber NFC auslesen. Fuer den Kartenscan brauchst du die native Android-Version.</Text>
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.balancePanel}>
             <View style={styles.balanceIcon}>
               <MaterialIcons name="account-balance-wallet" size={30} color="#00684F" />
@@ -102,7 +125,7 @@ export function NfcScannerScreen() {
             </Text>
           </View>
 
-          <Pressable disabled={isScanning} style={[styles.scanButton, isScanning && styles.scanButtonDisabled]} onPress={scanCard}>
+          <Pressable disabled={isScanning || isWeb} style={[styles.scanButton, (isScanning || isWeb) && styles.scanButtonDisabled]} onPress={scanCard}>
             {isScanning ? <ActivityIndicator color="#FFFFFF" /> : <MaterialIcons name="nfc" size={24} color="#FFFFFF" />}
             <Text style={styles.scanButtonText}>{isScanning ? 'Karte lesen' : 'Karte scannen'}</Text>
           </Pressable>
@@ -143,7 +166,7 @@ export function NfcScannerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   balanceIcon: {
     alignItems: 'center',
     backgroundColor: '#E7F4EF',
@@ -289,5 +312,30 @@ const styles = StyleSheet.create({
     fontSize: 29,
     fontWeight: '900',
     lineHeight: 35,
+  },
+  webNotice: {
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFAEB',
+    borderColor: '#FEDF89',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 18,
+    padding: 14,
+  },
+  webNoticeText: {
+    color: '#667085',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 3,
+  },
+  webNoticeTextBlock: {
+    flex: 1,
+  },
+  webNoticeTitle: {
+    color: '#B54708',
+    fontSize: 15,
+    fontWeight: '900',
   },
 });
