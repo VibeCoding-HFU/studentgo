@@ -31,6 +31,9 @@ yarn-error.*
 *.pem
 *.zip
 
+# IDE / editor
+.idea/
+
 # local env files
 .env
 .env*.local

@@ -9,13 +9,12 @@ import {
 } from "../../shared/date-utils";
 import { fetchStarPlanJson, fetchStarPlanTimetableHtml } from "../../integrations/starplan/starplan.client";
 import { parseStarPlanTimetable } from "../../integrations/starplan/starplan.parser";
-import { fetchSwfrMealPlanHtmlPages } from "../../integrations/swfr/swfr.client";
+import { fetchSwfrMealPlanXml } from "../../integrations/swfr/swfr.client";
 import { parseSwfrMeals } from "../../integrations/swfr/swfr.parser";
 import { lessonsOverlap } from "./schedule-utils";
 
 export async function importSwfrMeals() {
-  const htmlPages = await fetchSwfrMealPlanHtmlPages();
-  const meals = htmlPages.flatMap((html) => parseSwfrMeals(html));
+  const meals = parseSwfrMeals(await fetchSwfrMealPlanXml());
   const canteen = await getOrCreateCanteen("Mensa Furtwangen");
   const importedAt = new Date();
 
