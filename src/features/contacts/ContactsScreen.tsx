@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
-import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { getBackendUrl } from '@/constants/api';
 import { useAuth } from '@/contexts/auth-context';
 import { useSync } from '@/contexts/sync-context';
@@ -115,9 +114,7 @@ export default function ContactsScreen() {
               kicker="Kontakt"
               title="Kontakte"
               subtitle="Oeffentliche Kontakte und deine persoenlich markierten Eintraege."
-            >
-              <SyncStatusBadge />
-            </ModuleHeader>
+            />
           </View>
 
           <View style={styles.segmentedControl}>

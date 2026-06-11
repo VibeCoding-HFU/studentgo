@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
-import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 import { readApiError } from '@/src/shared/api/client';
@@ -183,9 +182,7 @@ export default function AdminScreen() {
             kicker="Admin"
             title="Verwalten"
             subtitle="Eintraege vorbereiten und erweiterte Admin-Einstellungen bei Bedarf oeffnen."
-          >
-            <SyncStatusBadge />
-          </ModuleHeader>
+          />
         </View>
 
         {message ? <Text style={styles.success}>{message}</Text> : null}

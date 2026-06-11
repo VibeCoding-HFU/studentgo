@@ -4,7 +4,6 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ModuleHeader } from '@/components/module-header';
-import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 import { decryptPayloadWithPrivateKeys, getPrivateKeys } from '@/lib/client-crypto';
@@ -106,9 +105,7 @@ export default function RequestsScreen() {
             kicker="StudentGo"
             title="Anfragen"
             subtitle="Einladungen zu persoenlichen Terminen annehmen oder ablehnen."
-          >
-            <SyncStatusBadge />
-          </ModuleHeader>
+          />
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}

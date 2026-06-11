@@ -6,7 +6,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
-import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useAuth } from '@/contexts/auth-context';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useThemePreference } from '@/contexts/theme-preference-context';
@@ -232,9 +231,7 @@ export default function AccountScreen() {
               kicker="Account"
               title="Angemeldet"
               subtitle={`Du nutzt StudentGo aktuell als ${roleLabel(activeRole)}.`}
-            >
-              <SyncStatusBadge />
-            </ModuleHeader>
+            />
           </View>
 
           <View style={styles.profileCard}>

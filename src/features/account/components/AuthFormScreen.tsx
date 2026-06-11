@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
-import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { Role } from '@/src/shared/types/auth';
 import { baseStyles } from '../styles';
@@ -70,9 +69,7 @@ export function AuthFormScreen({
             kicker="Account"
             title={mode === 'login' ? 'Einloggen' : 'Account anlegen'}
             subtitle="Admin-Accounts koennen als Admin, Verwalter oder User arbeiten. Verwalter koennen als Verwalter oder User starten."
-          >
-            <SyncStatusBadge />
-          </ModuleHeader>
+          />
         </View>
 
         <Pressable style={[styles.themeToggle, isDarkMode && styles.themeToggleDark]} onPress={onTogglePreference}>

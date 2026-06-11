@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
-import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { getBackendUrl } from '@/constants/api';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
@@ -274,9 +273,7 @@ export default function DeadlinesScreen() {
             kicker="To-Do"
             title="Aufgaben"
             subtitle="Notizen und offene To-Dos an einem Ort verwalten."
-          >
-            <SyncStatusBadge />
-          </ModuleHeader>
+          />
         </View>
 
         <View style={styles.notesPanel}>
