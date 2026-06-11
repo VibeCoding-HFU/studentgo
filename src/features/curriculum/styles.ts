@@ -34,6 +34,16 @@ export const baseStyles = StyleSheet.create({
     top: 18,
     width: 150,
   },
+  heroIconBox: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(209,250,223,0.12)',
+    borderColor: 'rgba(209,250,223,0.24)',
+    borderRadius: 8,
+    borderWidth: 1,
+    height: 64,
+    justifyContent: 'center',
+    width: 64,
+  },
   heroKicker: {
     color: '#D6F5E6',
     fontFamily: Fonts.rounded,
@@ -42,6 +52,7 @@ export const baseStyles = StyleSheet.create({
     letterSpacing: 1.1,
     textTransform: 'uppercase',
   },
+  heroTextBlock: { flex: 1 },
   heroTitle: {
     color: '#FFFFFF',
     fontFamily: Fonts.serif,
@@ -56,6 +67,7 @@ export const baseStyles = StyleSheet.create({
     marginTop: 10,
     maxWidth: 560,
   },
+  heroTitleRow: { alignItems: 'center', flexDirection: 'row', gap: 14 },
   heroMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 },
   heroPill: {
     backgroundColor: 'rgba(255,255,255,0.12)',

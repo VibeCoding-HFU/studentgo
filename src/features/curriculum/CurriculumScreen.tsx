@@ -82,11 +82,18 @@ export function CurriculumScreen() {
           <View style={styles.hero}>
             <View style={styles.heroGlowLarge} />
             <View style={styles.heroGlowSmall} />
-            <Text style={styles.heroKicker}>Curriculum Explorer</Text>
-            <Text style={styles.heroTitle}>{controller.program ? `${controller.program.name} ${controller.program.degree}` : 'Curriculum'}</Text>
-            <Text style={styles.heroSubtitle}>
-              Semesterstruktur, Vertiefungen, Pruefungsformen und Modulbeziehungen in einer Ansicht, inklusive Quellenstand aus SPO und Modulkatalog.
-            </Text>
+            <View style={styles.heroTitleRow}>
+              <View style={styles.heroIconBox}>
+                <MaterialIcons name="school" size={32} color="#D1FADF" />
+              </View>
+              <View style={styles.heroTextBlock}>
+                <Text style={styles.heroKicker}>Curriculum Explorer</Text>
+                <Text style={styles.heroTitle}>{controller.program ? `${controller.program.name} ${controller.program.degree}` : 'Curriculum'}</Text>
+                <Text style={styles.heroSubtitle}>
+                  Semesterstruktur, Vertiefungen, Pruefungsformen und Modulbeziehungen in einer Ansicht, inklusive Quellenstand aus SPO und Modulkatalog.
+                </Text>
+              </View>
+            </View>
             <View style={styles.heroMetaRow}>
               <View style={styles.heroPill}>
                 <Text style={styles.heroPillText}>{`${controller.program?.totalCredits ?? 0} LP gesamt`}</Text>

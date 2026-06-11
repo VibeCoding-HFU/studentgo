@@ -1,116 +1,73 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Tabs } from 'expo-router';
-import React, { useMemo } from 'react';
-import { useWindowDimensions } from 'react-native';
-import type { Animated, StyleProp, ViewStyle } from 'react-native';
+import { Stack, useRouter } from 'expo-router';
+import { Pressable } from 'react-native';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
-type TabSceneStyleInterpolator = (props: {
-  current: { progress: Animated.Value };
-}) => {
-  sceneStyle: Animated.WithAnimatedValue<StyleProp<ViewStyle>>;
-};
-
-export default function TabLayout() {
-  const colorScheme = useColorScheme();
-  const theme = colorScheme === 'dark' ? 'dark' : 'light';
-  const { isAdminMode, isManagerMode } = useAuth();
-  const { width } = useWindowDimensions();
-  const sceneStyleInterpolator = useMemo<TabSceneStyleInterpolator>(() => ({ current }) => ({
-    sceneStyle: {
-      opacity: current.progress.interpolate({
-        inputRange: [-1, 0, 1],
-        outputRange: [1, 1, 1],
-      }),
-      transform: [
-        {
-          translateX: current.progress.interpolate({
-            inputRange: [-1, 0, 1],
-            outputRange: [-width, 0, width],
-          }),
-        },
-      ],
-    },
-  }), [width]);
+function HomeBackButton() {
+  const router = useRouter();
 
   return (
-    <Tabs
-      screenOptions={{
-        animation: 'shift',
-        sceneStyleInterpolator,
-        tabBarActiveTintColor: Colors[theme].tint,
-        transitionSpec: {
-          animation: 'timing',
-          config: {
-            duration: 260,
-          },
-        },
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Plan',
-          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="calendar-month" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="deadlines"
-        options={{
-          title: 'To-Do',
-          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="checklist" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="contacts"
-        options={{
-          title: 'Kontakt',
-          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="contacts" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="nfc"
-        options={{
-          title: 'Mensa',
-          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="nfc" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="account"
-        options={{
-          title: 'Account',
-          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="account-circle" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="requests"
-        options={{
-          href: null,
-          title: 'Anfragen',
-          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="notifications" color={color} />,
-        }}
-      />
-      <Tabs.Screen
+    <Pressable
+      accessibilityLabel="Zur Startseite"
+      accessibilityRole="button"
+      onPress={() => router.replace('/')}
+      style={({ pressed }) => ({
+        alignItems: 'center',
+        height: 42,
+        justifyContent: 'center',
+        marginLeft: 4,
+        opacity: pressed ? 0.7 : 1,
+        width: 42,
+      })}
+    >
+      <MaterialIcons name="arrow-back" size={25} color="#00684F" />
+    </Pressable>
+  );
+}
+
+const moduleHeaderOptions = {
+  headerLeft: () => <HomeBackButton />,
+  headerShadowVisible: false,
+  headerStyle: {
+    backgroundColor: '#F5F7FB',
+  },
+  headerTintColor: '#00684F',
+  headerTitleStyle: {
+    color: '#101828',
+    fontWeight: '800' as const,
+  },
+};
+
+export default function ModuleStackLayout() {
+  const { isAdminMode, isManagerMode } = useAuth();
+
+  return (
+    <Stack screenOptions={{ animation: 'slide_from_right' }}>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="schedule" options={{ ...moduleHeaderOptions, title: 'Plan' }} />
+      <Stack.Screen name="deadlines" options={{ ...moduleHeaderOptions, title: 'To-Do' }} />
+      <Stack.Screen name="contacts" options={{ ...moduleHeaderOptions, title: 'Kontakt' }} />
+      <Stack.Screen name="curriculum" options={{ ...moduleHeaderOptions, title: 'Studium' }} />
+      <Stack.Screen name="nfc" options={{ ...moduleHeaderOptions, title: 'Mensa' }} />
+      <Stack.Screen name="account" options={{ ...moduleHeaderOptions, title: 'Account' }} />
+      <Stack.Screen name="requests" options={{ ...moduleHeaderOptions, title: 'Anfragen' }} />
+      <Stack.Screen
         name="manager"
         options={{
-          href: isManagerMode && !isAdminMode ? undefined : null,
+          ...moduleHeaderOptions,
           title: 'Verwalter',
-          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="edit-note" color={color} />,
+          ...(isManagerMode && !isAdminMode ? {} : { href: null }),
         }}
       />
-      <Tabs.Screen
+      <Stack.Screen
         name="admin"
         options={{
-          href: isAdminMode ? undefined : null,
+          ...moduleHeaderOptions,
           title: 'Admin',
-          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="admin-panel-settings" color={color} />,
+          ...(isAdminMode ? {} : { href: null }),
         }}
       />
-    </Tabs>
+    </Stack>
   );
 }

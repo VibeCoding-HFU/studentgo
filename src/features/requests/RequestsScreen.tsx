@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ModuleHeader } from '@/components/module-header';
 import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
@@ -99,10 +100,15 @@ export default function RequestsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.kicker}>StudentGo</Text>
-          <Text style={styles.title}>Anfragen</Text>
-          <Text style={styles.subtitle}>Einladungen zu persoenlichen Terminen annehmen oder ablehnen.</Text>
-          <SyncStatusBadge />
+          <ModuleHeader
+            accent="#92400E"
+            icon="notifications"
+            kicker="StudentGo"
+            title="Anfragen"
+            subtitle="Einladungen zu persoenlichen Terminen annehmen oder ablehnen."
+          >
+            <SyncStatusBadge />
+          </ModuleHeader>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}

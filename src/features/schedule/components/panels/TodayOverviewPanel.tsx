@@ -2,6 +2,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Pressable, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import { ModuleHeader } from '@/components/module-header';
 import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { addDays } from '@/src/shared/utils/dates';
@@ -40,10 +41,15 @@ export function TodayOverviewPanel({ model }: { model: ScheduleViewModel }) {
   return (
     <>
       <View style={styles.header}>
-        <Text style={styles.kicker}>StudentGo</Text>
-        <Text style={styles.title}>Tagesplan</Text>
-        <Text style={styles.subtitle}>Termine und Mensa-Angebote fuer den ausgewaehlten Tag.</Text>
-        <SyncStatusBadge />
+        <ModuleHeader
+          accent="#00684F"
+          icon="calendar-month"
+          kicker="Plan"
+          title="Tagesplan"
+          subtitle="Termine und Mensa-Angebote fuer den ausgewaehlten Tag."
+        >
+          <SyncStatusBadge />
+        </ModuleHeader>
       </View>
 
       {accountStats ? (

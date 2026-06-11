@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
 import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { getBackendUrl } from '@/constants/api';
@@ -267,10 +268,15 @@ export default function DeadlinesScreen() {
       <SwipeableTabView>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.kicker}>To-Do</Text>
-          <Text style={styles.title}>Aufgaben</Text>
-          <Text style={styles.subtitle}>Notizen und offene To-Dos an einem Ort verwalten.</Text>
-          <SyncStatusBadge />
+          <ModuleHeader
+            accent="#1D4ED8"
+            icon="checklist"
+            kicker="To-Do"
+            title="Aufgaben"
+            subtitle="Notizen und offene To-Dos an einem Ort verwalten."
+          >
+            <SyncStatusBadge />
+          </ModuleHeader>
         </View>
 
         <View style={styles.notesPanel}>

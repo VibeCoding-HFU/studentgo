@@ -2,6 +2,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
 import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
@@ -63,12 +64,15 @@ export function AuthFormScreen({
       <SwipeableTabView>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.kicker}>Account</Text>
-          <Text style={styles.title}>{mode === 'login' ? 'Einloggen' : 'Account anlegen'}</Text>
-          <Text style={styles.subtitle}>
-            Admin-Accounts koennen als Admin, Verwalter oder User arbeiten. Verwalter koennen als Verwalter oder User starten.
-          </Text>
-          <SyncStatusBadge />
+          <ModuleHeader
+            accent="#7A2E27"
+            icon="account-circle"
+            kicker="Account"
+            title={mode === 'login' ? 'Einloggen' : 'Account anlegen'}
+            subtitle="Admin-Accounts koennen als Admin, Verwalter oder User arbeiten. Verwalter koennen als Verwalter oder User starten."
+          >
+            <SyncStatusBadge />
+          </ModuleHeader>
         </View>
 
         <Pressable style={[styles.themeToggle, isDarkMode && styles.themeToggleDark]} onPress={onTogglePreference}>
