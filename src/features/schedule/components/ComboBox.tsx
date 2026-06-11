@@ -21,7 +21,7 @@ export function ComboBox<T extends Option>({ disabled, label, onChange, options,
   return (
     <View style={[styles.comboBox, open && styles.comboBoxOpen]}>
       <Text style={styles.comboTitle}>{label}</Text>
-      <Pressable disabled={disabled} style={[styles.comboButton, disabled && styles.disabled]} onPress={() => setOpen((current) => !current)}>
+      <Pressable accessibilityRole="combobox" disabled={disabled} style={[styles.comboButton, disabled && styles.buttonDisabled]} onPress={() => setOpen((current) => !current)}>
         <Text style={styles.comboLabel}>{value?.shortname ?? value?.name ?? 'Auswaehlen'}</Text>
         <MaterialIcons name={open ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} size={24} color="#475467" style={styles.chevronIcon} />
       </Pressable>
@@ -29,8 +29,16 @@ export function ComboBox<T extends Option>({ disabled, label, onChange, options,
         <View style={styles.comboMenu}>
           <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled style={styles.comboMenuScroll}>
             {options.map((option) => (
-              <Pressable key={String(option.id)} style={styles.comboOption} onPress={() => { onChange(option); setOpen(false); }}>
-                <Text style={styles.comboOptionText}>{option.shortname ? `${option.shortname} - ${option.name}` : option.name}</Text>
+              <Pressable
+                key={String(option.id)}
+                style={[styles.comboOption, value?.id === option.id && styles.comboOptionActive]}
+                onPress={() => {
+                  onChange(option);
+                  setOpen(false);
+                }}>
+                <Text style={[styles.comboOptionText, value?.id === option.id && styles.comboOptionTextActive]}>
+                  {option.shortname ? `${option.shortname} - ${option.name}` : option.name}
+                </Text>
               </Pressable>
             ))}
           </ScrollView>
