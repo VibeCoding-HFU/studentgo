@@ -59,3 +59,4 @@ export const baseStyles = StyleSheet.create({
   loadMoreButtonDisabled: { opacity: 0.55 },
   loadMoreButtonText: { color: '#00684F', fontSize: 14, fontWeight: '800' },
 });
+export { contactsBaseStyles as baseStyles } from '@/src/shared/styles/moduleStyles';
