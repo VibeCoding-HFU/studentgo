@@ -44,3 +44,31 @@ test("parses SWFR meals from current and future available weeks", () => {
   assert.match(meals[0].mainDish, /Current week pasta/);
   assert.match(meals[1].mainDish, /Next week rice/);
 });
+
+test("parses SWFR meals from official XML API", () => {
+  const xml = `
+    <plan>
+      <ort id="641">
+        <mensa>Mensa Furtwangen</mensa>
+        <tagesplan datum="09.06.2026">
+          <menue art="Essen 1" zusatz="vegetarisch">
+            <name>Kartoffelroesti Kraeuterquark</name>
+            <nameMitUmbruch>Kartoffelroesti&lt;br&gt;Kraeuterquark</nameMitUmbruch>
+            <preis>
+              <studierende>4,25EUR</studierende>
+            </preis>
+          </menue>
+        </tagesplan>
+      </ort>
+    </plan>
+  `;
+
+  const meals = parseSwfrMeals(xml);
+
+  assert.equal(meals.length, 1);
+  assert.equal(toDateInput(meals[0].date), "2026-06-09");
+  assert.equal(meals[0].day, "Dienstag");
+  assert.equal(meals[0].mainDish, "Essen 1: Kartoffelroesti, Kraeuterquark");
+  assert.equal(meals[0].priceCents, 425);
+  assert.equal(meals[0].vegetarianDish, "Kartoffelroesti, Kraeuterquark");
+});
