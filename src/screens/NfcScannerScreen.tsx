@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { AdvancedCardDetails } from '@/src/components/AdvancedCardDetails';
@@ -99,9 +100,13 @@ export function NfcScannerScreen() {
       <SwipeableTabView>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <Text style={styles.kicker}>Mensakarte</Text>
-            <Text style={styles.title}>NFC-Guthaben</Text>
-            <Text style={styles.subtitle}>Read-only Analyse fuer eigene DESFire-Karten. Es werden keine Schreib-, Key- oder Authentifizierungsumgehungs-Kommandos verwendet.</Text>
+            <ModuleHeader
+              accent="#B54708"
+              icon="nfc"
+              kicker="Mensakarte"
+              title="NFC-Guthaben"
+              subtitle="Read-only Analyse fuer eigene DESFire-Karten. Es werden keine Schreib-, Key- oder Authentifizierungsumgehungs-Kommandos verwendet."
+            />
           </View>
 
           {isWeb ? (

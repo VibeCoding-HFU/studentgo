@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
-import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useAuth } from '@/contexts/auth-context';
 import { dayFromDate, dayOptions, timeOptions } from '@/src/shared/utils/dates';
@@ -224,10 +224,13 @@ export function ManagerWorkspace({ embedded = false }: { embedded?: boolean }) {
   return (
     <>
         <View style={styles.header}>
-          <Text style={styles.kicker}>Verwalter</Text>
-          <Text style={styles.title}>Eintraege vorbereiten</Text>
-          <Text style={styles.subtitle}>Aenderungen werden als Anfrage gespeichert und erst nach Admin-Freigabe aktiv.</Text>
-          <SyncStatusBadge />
+          <ModuleHeader
+            accent="#047857"
+            icon="edit-note"
+            kicker="Verwalter"
+            title="Eintraege vorbereiten"
+            subtitle="Aenderungen werden als Anfrage gespeichert und erst nach Admin-Freigabe aktiv."
+          />
         </View>
 
         <View style={styles.toggleRow}>

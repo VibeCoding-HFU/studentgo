@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
-import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { useAuth } from '@/contexts/auth-context';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { useThemePreference } from '@/contexts/theme-preference-context';
@@ -225,10 +225,13 @@ export default function AccountScreen() {
         <SwipeableTabView>
           <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <Text style={styles.kicker}>Account</Text>
-            <Text style={styles.title}>Angemeldet</Text>
-            <Text style={styles.subtitle}>Du nutzt StudentGo aktuell als {roleLabel(activeRole)}.</Text>
-            <SyncStatusBadge />
+            <ModuleHeader
+              accent="#7A2E27"
+              icon="account-circle"
+              kicker="Account"
+              title="Angemeldet"
+              subtitle={`Du nutzt StudentGo aktuell als ${roleLabel(activeRole)}.`}
+            />
           </View>
 
           <View style={styles.profileCard}>

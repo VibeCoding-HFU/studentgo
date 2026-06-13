@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
-import { SyncStatusBadge } from '@/components/sync-status-badge';
 import { getBackendUrl } from '@/constants/api';
 import { useAuth } from '@/contexts/auth-context';
 import { useSync } from '@/contexts/sync-context';
@@ -108,10 +108,13 @@ export default function ContactsScreen() {
       <SwipeableTabView>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
-            <Text style={styles.kicker}>Kontakt</Text>
-            <Text style={styles.title}>Kontakte</Text>
-            <Text style={styles.subtitle}>Oeffentliche Kontakte und deine persoenlich markierten Eintraege.</Text>
-            <SyncStatusBadge />
+            <ModuleHeader
+              accent="#C11574"
+              icon="contacts"
+              kicker="Kontakt"
+              title="Kontakte"
+              subtitle="Oeffentliche Kontakte und deine persoenlich markierten Eintraege."
+            />
           </View>
 
           <View style={styles.segmentedControl}>
