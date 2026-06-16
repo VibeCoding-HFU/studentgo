@@ -1,6 +1,7 @@
 services:
   backend:
     image: "${STUDENTGO_BACKEND_IMAGE:?Set STUDENTGO_BACKEND_IMAGE to the backend image URL}"
+    platform: "${STUDENTGO_PLATFORM:-linux/amd64}"
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -26,6 +27,7 @@ services:
 
   frontend:
     image: "${STUDENTGO_FRONTEND_IMAGE:?Set STUDENTGO_FRONTEND_IMAGE to the frontend image URL}"
+    platform: "${STUDENTGO_PLATFORM:-linux/amd64}"
     restart: unless-stopped
     depends_on:
       backend:

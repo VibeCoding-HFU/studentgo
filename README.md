@@ -153,6 +153,28 @@ STUDENTGO_FRONTEND_IMAGE="registry.stackit.cloud/dein-projekt/studentgo-frontend
 docker compose -f docker-compose.dev.yml push
 ```
 
+Fuer Raspberry Pi 5 auf einem anderen Rechner muss vorher ein ARM64-faehiger Buildx-Builder eingerichtet werden. Der Fehler `exec /bin/sh: exec format error` bedeutet, dass Docker gerade ARM64-Container ohne passende Emulation ausfuehren will.
+
+```bash
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+docker buildx create --name studentgo-builder --driver docker-container --use
+docker buildx inspect --bootstrap
+```
+
+Danach fuer Pi 5 bauen und pushen:
+
+```bash
+STUDENTGO_PLATFORM="linux/arm64/v8" \
+STUDENTGO_BACKEND_IMAGE="registry.onstackit.cloud/studentgo/studentgo-backend:latest" \
+STUDENTGO_FRONTEND_IMAGE="registry.onstackit.cloud/studentgo/studentgo-frontend:latest" \
+docker compose -f docker-compose.dev.yml build
+
+STUDENTGO_PLATFORM="linux/arm64/v8" \
+STUDENTGO_BACKEND_IMAGE="registry.onstackit.cloud/studentgo/studentgo-backend:latest" \
+STUDENTGO_FRONTEND_IMAGE="registry.onstackit.cloud/studentgo/studentgo-frontend:latest" \
+docker compose -f docker-compose.dev.yml push
+```
+
 Spaeter fuer GitHub Container Registry nur die Variablen austauschen:
 
 ```bash
@@ -196,6 +218,7 @@ DOCKER_APP_URL="http://localhost:8080"
 MENSA_API_KEY="your_api_key_here"
 STUDENTGO_BACKEND_IMAGE="registry.example.com/studentgo-backend:tag"
 STUDENTGO_FRONTEND_IMAGE="registry.example.com/studentgo-frontend:tag"
+STUDENTGO_PLATFORM="linux/arm64/v8"
 ```
 
 Wenn `FRONTEND_PORT` geaendert wird, muessen `DOCKER_CORS_ORIGIN` und `DOCKER_APP_URL` passend gesetzt werden.
