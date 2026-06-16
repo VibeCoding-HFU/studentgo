@@ -22,7 +22,7 @@
         "android.permission.NFC"
       ],
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.studentgo"
+      "package": "de.hfu.studentgo"
     },
     "web": {
       "output": "static",
@@ -53,6 +53,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1a0baaa3-60ab-4858-bb52-c32bac735537"
+      }
     }
   }
 }

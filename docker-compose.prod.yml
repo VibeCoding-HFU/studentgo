@@ -1,0 +1,37 @@
+services:
+  backend:
+    image: "${STUDENTGO_BACKEND_IMAGE:?Set STUDENTGO_BACKEND_IMAGE to the backend image URL}"
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: "file:/data/studentgo.db"
+      CORS_ORIGIN: "${DOCKER_CORS_ORIGIN:?Set DOCKER_CORS_ORIGIN to the public web origin}"
+      APP_URL: "${DOCKER_APP_URL:?Set DOCKER_APP_URL to the public web URL}"
+      MENSA_API_KEY: "${MENSA_API_KEY:-}"
+    volumes:
+      - studentgo-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    image: "${STUDENTGO_FRONTEND_IMAGE:?Set STUDENTGO_FRONTEND_IMAGE to the frontend image URL}"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+volumes:
+  studentgo-data:

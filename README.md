@@ -104,6 +104,102 @@ npm run start
 
 Oeffne die App dann im zuvor gebauten Development Build, nicht in Expo Go.
 
+### Installierbare Android-App
+
+Fuer eine installierbare Android-APK ist das `preview`-Profil in `eas.json` vorbereitet:
+
+```bash
+npx eas-cli login
+EXPO_PUBLIC_API_URL="https://dein-backend.example.com" npx eas-cli build -p android --profile preview
+```
+
+Fuer Play-Store/Production-Builds kann das `production`-Profil genutzt werden:
+
+```bash
+EXPO_PUBLIC_API_URL="https://dein-backend.example.com" npx eas-cli build -p android --profile production
+```
+
+Die Android-App braucht eine oeffentlich erreichbare Backend-URL. `localhost` zeigt auf dem Geraet selbst und funktioniert dort nicht fuer den Entwicklungsrechner.
+
+## Docker: Web-App und Backend
+
+Die Web-Version kann zusammen mit dem Backend als zwei Container gestartet werden. Das Frontend wird als statischer Expo-Web-Build erzeugt und per Nginx ausgeliefert; `/api/*` und `/health` werden intern an das Backend weitergeleitet.
+
+### Docker Dev
+
+Dev baut die Images lokal. `docker-compose.yml` ist ein Alias fuer die Dev-Konfiguration; explizit geht es mit `docker-compose.dev.yml`.
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+Danach ist die App unter `http://localhost:8080` erreichbar. Das Backend wird nicht direkt nach aussen veroeffentlicht; der Healthcheck ist ueber `http://localhost:8080/health` erreichbar.
+
+Die Dev-SQLite-Datenbank liegt persistent im Docker-Volume `studentgo-dev-data`. Migrationen werden beim Start des Backend-Containers automatisch mit `prisma migrate deploy` angewendet. Seed-Daten werden nicht automatisch eingespielt, damit bestehende Daten nicht ueberschrieben werden.
+
+### Docker Images bauen und pushen
+
+Die Image-URLs werden ueber Variablen gesetzt. Fuer Stackit zum Testen:
+
+```bash
+docker login registry.stackit.cloud
+
+STUDENTGO_BACKEND_IMAGE="registry.stackit.cloud/dein-projekt/studentgo-backend:dev" \
+STUDENTGO_FRONTEND_IMAGE="registry.stackit.cloud/dein-projekt/studentgo-frontend:dev" \
+docker compose -f docker-compose.dev.yml build
+
+STUDENTGO_BACKEND_IMAGE="registry.stackit.cloud/dein-projekt/studentgo-backend:dev" \
+STUDENTGO_FRONTEND_IMAGE="registry.stackit.cloud/dein-projekt/studentgo-frontend:dev" \
+docker compose -f docker-compose.dev.yml push
+```
+
+Spaeter fuer GitHub Container Registry nur die Variablen austauschen:
+
+```bash
+docker login ghcr.io
+
+STUDENTGO_BACKEND_IMAGE="ghcr.io/dein-org/studentgo-backend:latest" \
+STUDENTGO_FRONTEND_IMAGE="ghcr.io/dein-org/studentgo-frontend:latest" \
+docker compose -f docker-compose.dev.yml build
+
+STUDENTGO_BACKEND_IMAGE="ghcr.io/dein-org/studentgo-backend:latest" \
+STUDENTGO_FRONTEND_IMAGE="ghcr.io/dein-org/studentgo-frontend:latest" \
+docker compose -f docker-compose.dev.yml push
+```
+
+### Docker Production
+
+Production baut nicht lokal, sondern zieht die Images aus der Registry:
+
+```bash
+STUDENTGO_BACKEND_IMAGE="registry.stackit.cloud/dein-projekt/studentgo-backend:dev" \
+STUDENTGO_FRONTEND_IMAGE="registry.stackit.cloud/dein-projekt/studentgo-frontend:dev" \
+DOCKER_CORS_ORIGIN="https://deine-domain.example" \
+DOCKER_APP_URL="https://deine-domain.example" \
+docker compose -f docker-compose.prod.yml pull
+
+STUDENTGO_BACKEND_IMAGE="registry.stackit.cloud/dein-projekt/studentgo-backend:dev" \
+STUDENTGO_FRONTEND_IMAGE="registry.stackit.cloud/dein-projekt/studentgo-frontend:dev" \
+DOCKER_CORS_ORIGIN="https://deine-domain.example" \
+DOCKER_APP_URL="https://deine-domain.example" \
+docker compose -f docker-compose.prod.yml up -d
+```
+
+In Production liegt die SQLite-Datenbank im Docker-Volume `studentgo-data`.
+
+Nuetzliche Docker-Umgebungsvariablen:
+
+```env
+FRONTEND_PORT="8080"
+DOCKER_CORS_ORIGIN="http://localhost:8080"
+DOCKER_APP_URL="http://localhost:8080"
+MENSA_API_KEY="your_api_key_here"
+STUDENTGO_BACKEND_IMAGE="registry.example.com/studentgo-backend:tag"
+STUDENTGO_FRONTEND_IMAGE="registry.example.com/studentgo-frontend:tag"
+```
+
+Wenn `FRONTEND_PORT` geaendert wird, muessen `DOCKER_CORS_ORIGIN` und `DOCKER_APP_URL` passend gesetzt werden.
+
 ## Native Crypto: haeufige Stolperstellen
 
 - Expo Go unterstuetzt `react-native-quick-crypto` nicht. Fehlermeldungen wie `Android-Verschluesselung benoetigt einen neu gebauten Dev-Client...` bedeuten, dass die App nicht mit dem passenden Development Build laeuft.
