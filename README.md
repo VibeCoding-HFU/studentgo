@@ -104,6 +104,40 @@ npm run start
 
 Oeffne die App dann im zuvor gebauten Development Build, nicht in Expo Go.
 
+### GitHub Actions APK-Build
+
+Nach erfolgreichem Quality Gate und Docker-Build erzeugt `.github/workflows/android-apk.yml` eine ARM64-Release-APK. Pull Requests erhalten eine mit dem Android-Debug-Key signierte Test-APK. Auf `main` und bei signierten manuellen Laeufen wird das geschuetzte GitHub Environment `android-release` verwendet.
+
+Repository-Variable:
+
+```env
+APP_API_URL="https://dein-backend.example.com"
+```
+
+Secrets im Environment `android-release`:
+
+```env
+ANDROID_KEYSTORE_BASE64="..."
+ANDROID_KEYSTORE_PASSWORD="..."
+ANDROID_KEY_ALIAS="studentgo"
+ANDROID_KEY_PASSWORD="..."
+```
+
+Der Keystore wird nur waehrend des Workflows dekodiert. Nach `expo prebuild` passt der Workflow die generierte Gradle-Konfiguration so an, dass der Release-Build diese Secrets verwendet. EAS wird dafuer nicht benoetigt.
+
+Keystore und Base64-Wert koennen lokal erzeugt werden:
+
+```bash
+keytool -genkeypair -v \
+  -keystore studentgo-release.keystore \
+  -alias studentgo \
+  -keyalg RSA \
+  -keysize 2048 \
+  -validity 10000
+
+base64 -w0 studentgo-release.keystore
+```
+
 ## Docker: Web-App und Backend
 
 Die Web-Version kann zusammen mit dem Backend als zwei Container gestartet werden. Das Frontend wird als statischer Expo-Web-Build erzeugt und per Nginx ausgeliefert; `/api/*` und `/health` werden intern an das Backend weitergeleitet.
@@ -236,5 +270,10 @@ npm test
 Die GitHub-Actions-Pipeline kann lokal mit [`act`](https://github.com/nektos/act) ausgefuehrt werden:
 
 ```bash
+cp .secrets.example .secrets
+cp .vars.example .vars
+# Platzhalter in .secrets und .vars durch lokale Testwerte ersetzen.
 bash scripts/run-actions-local.sh
 ```
+
+Der lokale Standardlauf baut Quality Gate, beide ARM64-Images und eine signierte APK vollstaendig. `.secrets` und `.vars` sind von Git ausgeschlossen. Ein schneller APK-Test ohne Release-Secrets ist mit `bash scripts/run-actions-local.sh --input release_signing=false` moeglich.

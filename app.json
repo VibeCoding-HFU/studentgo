@@ -22,7 +22,7 @@
         "android.permission.NFC"
       ],
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.studentgo"
+      "package": "de.hfu.studentgo"
     },
     "web": {
       "output": "static",
