@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   quality:
@@ -43,3 +44,10 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  docker:
+    name: Build Docker images
+    needs: quality
+    uses: ./.github/workflows/docker-ghcr.yml
+    with:
+      push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
