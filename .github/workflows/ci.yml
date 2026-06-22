@@ -6,9 +6,21 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      push_images:
+        description: Push Docker images to GHCR
+        required: false
+        type: boolean
+        default: false
+      release_signing:
+        description: Build the APK with android-release environment secrets
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   quality:
@@ -43,3 +55,18 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  docker:
+    name: Build Docker images
+    needs: quality
+    uses: ./.github/workflows/docker-ghcr.yml
+    with:
+      push: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.push_images) }}
+
+  apk:
+    name: Build Android APK
+    needs: docker
+    uses: ./.github/workflows/android-apk.yml
+    with:
+      release_signing: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.release_signing) }}
+    secrets: inherit

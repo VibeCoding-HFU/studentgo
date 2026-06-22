@@ -15,5 +15,7 @@ exec act workflow_dispatch \
   --cache-server-path "$ACT_ROOT/cache" \
   --artifact-server-path "$ACT_ROOT/artifacts" \
   --container-architecture linux/amd64 \
-  --privileged \
+  --container-options "--privileged" \
+  --platform ubuntu-latest=catthehacker/ubuntu:act-latest \
+  --pull=false \
   "$@"

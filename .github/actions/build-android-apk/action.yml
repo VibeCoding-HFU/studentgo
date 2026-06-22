@@ -1,0 +1,175 @@
+name: Build Android APK
+description: Generate the native Android project and build an APK artifact
+
+inputs:
+  api-url:
+    description: Public backend URL embedded in the Expo bundle
+    required: true
+  artifact-name:
+    description: Name of the uploaded APK artifact
+    required: true
+  release-signing:
+    description: Configure the generated Gradle project for release signing
+    required: false
+    default: "false"
+  keystore-base64:
+    description: Base64-encoded Android keystore
+    required: false
+  keystore-password:
+    description: Android keystore password
+    required: false
+  key-alias:
+    description: Android signing key alias
+    required: false
+  key-password:
+    description: Android signing key password
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Validate API URL
+      shell: bash
+      env:
+        EXPO_PUBLIC_API_URL: ${{ inputs.api-url }}
+      run: |
+        set -euo pipefail
+        if [ -z "$EXPO_PUBLIC_API_URL" ]; then
+          echo "::error::APP_API_URL is not configured."
+          exit 1
+        fi
+
+    - name: Validate release-signing secrets
+      if: inputs.release-signing == 'true'
+      shell: bash
+      env:
+        ANDROID_KEYSTORE_BASE64: ${{ inputs.keystore-base64 }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ inputs.keystore-password }}
+        ANDROID_KEY_ALIAS: ${{ inputs.key-alias }}
+        ANDROID_KEY_PASSWORD: ${{ inputs.key-password }}
+      run: |
+        set -euo pipefail
+        required_values=(
+          ANDROID_KEYSTORE_BASE64
+          ANDROID_KEYSTORE_PASSWORD
+          ANDROID_KEY_ALIAS
+          ANDROID_KEY_PASSWORD
+        )
+
+        for value_name in "${required_values[@]}"; do
+          if [ -z "${!value_name:-}" ]; then
+            echo "::error::$value_name is not configured."
+            exit 1
+          fi
+        done
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: npm
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: 21
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v4
+      with:
+        packages: >-
+          platform-tools
+          platforms;android-36
+          build-tools;36.0.0
+          ndk;27.1.12297006
+
+    - name: Install dependencies
+      shell: bash
+      run: npm ci
+
+    - name: Generate Android project
+      shell: bash
+      env:
+        EXPO_PUBLIC_API_URL: ${{ inputs.api-url }}
+        NODE_ENV: production
+      run: npx expo prebuild --platform android --clean --no-install
+
+    - name: Decode release keystore
+      if: inputs.release-signing == 'true'
+      shell: bash
+      env:
+        ANDROID_KEYSTORE_BASE64: ${{ inputs.keystore-base64 }}
+        ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.keystore
+      run: |
+        set -euo pipefail
+        printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+        chmod 600 "$ANDROID_KEYSTORE_PATH"
+
+    - name: Configure generated Gradle release signing
+      if: inputs.release-signing == 'true'
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        from pathlib import Path
+
+        build_gradle_path = Path("android/app/build.gradle")
+        build_gradle = build_gradle_path.read_text()
+
+        debug_config = """        debug {
+                    storeFile file('debug.keystore')
+                    storePassword 'android'
+                    keyAlias 'androiddebugkey'
+                    keyPassword 'android'
+                }"""
+        release_config = debug_config + """
+                release {
+                    storeFile file(System.getenv("ANDROID_KEYSTORE_PATH"))
+                    storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                    keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                    keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+                }"""
+        release_build_type = """        release {
+                    // Caution! In production, you need to generate your own keystore file.
+                    // see https://reactnative.dev/docs/signed-apk-android.
+                    signingConfig signingConfigs.debug"""
+        signed_release_build_type = release_build_type.replace(
+            "signingConfig signingConfigs.debug",
+            "signingConfig signingConfigs.release",
+        )
+
+        if build_gradle.count(debug_config) != 1:
+            raise SystemExit("Expected exactly one generated debug signing configuration.")
+        if build_gradle.count(release_build_type) != 1:
+            raise SystemExit("Expected exactly one generated release build type.")
+
+        build_gradle = build_gradle.replace(debug_config, release_config, 1)
+        build_gradle = build_gradle.replace(release_build_type, signed_release_build_type, 1)
+        build_gradle_path.write_text(build_gradle)
+        PY
+
+    - name: Build release APK
+      shell: bash
+      working-directory: android
+      env:
+        EXPO_PUBLIC_API_URL: ${{ inputs.api-url }}
+        NODE_ENV: production
+        ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.keystore
+        ANDROID_KEYSTORE_PASSWORD: ${{ inputs.keystore-password }}
+        ANDROID_KEY_ALIAS: ${{ inputs.key-alias }}
+        ANDROID_KEY_PASSWORD: ${{ inputs.key-password }}
+      run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+    - name: Verify bundled API URL
+      shell: bash
+      env:
+        EXPO_PUBLIC_API_URL: ${{ inputs.api-url }}
+      run: grep -aFq "$EXPO_PUBLIC_API_URL" android/app/build/generated/assets/react/release/index.android.bundle
+
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: android/app/build/outputs/apk/release/*.apk
+        if-no-files-found: error
+        retention-days: 14
