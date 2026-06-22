@@ -2,6 +2,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ModuleHeader } from '@/components/module-header';
 import { SwipeableTabView } from '@/components/swipeable-tab-view';
 import { useThemedStyles } from '@/hooks/use-themed-styles';
 import { CurriculumGraph } from './components/CurriculumGraph';
@@ -79,34 +80,26 @@ export function CurriculumScreen() {
     <SafeAreaView style={styles.safeArea}>
       <SwipeableTabView>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-          <View style={styles.hero}>
-            <View style={styles.heroGlowLarge} />
-            <View style={styles.heroGlowSmall} />
-            <View style={styles.heroTitleRow}>
-              <View style={styles.heroIconBox}>
-                <MaterialIcons name="school" size={32} color="#D1FADF" />
+          <View style={styles.header}>
+            <ModuleHeader
+              accent="#00684F"
+              icon="school"
+              kicker="Curriculum"
+              title={controller.program ? `${controller.program.name} ${controller.program.degree}` : 'Studienplan'}
+              subtitle="Semesterstruktur, Vertiefungen, Pruefungsformen und Modulbeziehungen mit Quellenstand aus SPO und Modulkatalog."
+            >
+              <View style={styles.summaryBadge}>
+                <Text style={styles.summaryBadgeText}>{`${controller.program?.totalCredits ?? 0} LP gesamt`}</Text>
               </View>
-              <View style={styles.heroTextBlock}>
-                <Text style={styles.heroKicker}>Curriculum Explorer</Text>
-                <Text style={styles.heroTitle}>{controller.program ? `${controller.program.name} ${controller.program.degree}` : 'Curriculum'}</Text>
-                <Text style={styles.heroSubtitle}>
-                  Semesterstruktur, Vertiefungen, Pruefungsformen und Modulbeziehungen in einer Ansicht, inklusive Quellenstand aus SPO und Modulkatalog.
-                </Text>
+              <View style={styles.summaryBadge}>
+                <Text style={styles.summaryBadgeText}>{`${controller.program?.regularSemesters ?? 0} Semester`}</Text>
               </View>
-            </View>
-            <View style={styles.heroMetaRow}>
-              <View style={styles.heroPill}>
-                <Text style={styles.heroPillText}>{`${controller.program?.totalCredits ?? 0} LP gesamt`}</Text>
-              </View>
-              <View style={styles.heroPill}>
-                <Text style={styles.heroPillText}>{`${controller.program?.regularSemesters ?? 0} Lehrplansemester`}</Text>
-              </View>
-              <View style={styles.heroPill}>
-                <Text style={styles.heroPillText}>
+              <View style={styles.summaryBadge}>
+                <Text style={styles.summaryBadgeText}>
                   {controller.program?.spoVersion?.label ?? controller.program?.sourceRefs[0]?.document.versionLabel ?? 'Quellen hinterlegt'}
                 </Text>
               </View>
-            </View>
+            </ModuleHeader>
           </View>
 
           <View style={styles.content}>
