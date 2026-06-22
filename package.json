@@ -51,6 +51,7 @@
     "expo-system-ui": "~55.0.18",
     "expo-web-browser": "~55.0.16",
     "express": "^5.2.1",
+    "nodemailer": "^9.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-native": "0.83.6",
@@ -71,6 +72,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "~19.2.10",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~55.0.1",

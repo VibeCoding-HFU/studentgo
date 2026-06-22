@@ -1,5 +1,6 @@
-import { createHash, randomBytes, scrypt, timingSafeEqual } from "crypto";
+import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from "crypto";
 import { NextFunction, Request, Response } from "express";
+import nodemailer from "nodemailer";
 import { promisify } from "util";
 import { badRequest, conflict, forbidden, unauthorized } from "../../shared/http/http-error";
 import { normalizePublicKeyJson } from "../../shared/public-key";
@@ -8,7 +9,8 @@ import { authRepository } from "./auth.repository";
 
 const scryptAsync = promisify(scrypt);
 const SESSION_DAYS = 7;
-const CONFIRMATION_HOURS = 24;
+const CONFIRMATION_HOURS = 1;
+const CONFIRMATION_CODE_DIGITS = 8;
 
 export type Role = "USER" | "MANAGER" | "ADMIN";
 
@@ -70,25 +72,91 @@ function hashConfirmationToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function normalizeConfirmationCode(token: string) {
+  return token.replace(/\D/g, "");
+}
+
 function createSessionExpiry() {
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + SESSION_DAYS);
   return expiresAt;
 }
 
-function createConfirmationExpiry() {
+export function createConfirmationExpiry() {
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + CONFIRMATION_HOURS);
   return expiresAt;
 }
 
+export function createConfirmationCode() {
+  const min = 10 ** (CONFIRMATION_CODE_DIGITS - 1);
+  return String(randomInt(min, 10 ** CONFIRMATION_CODE_DIGITS));
+}
+
+function gmailConfig() {
+  const user = process.env.GMAIL_USER?.trim();
+  const pass = process.env.GMAIL_APP_PASSWORD?.replace(/\s+/g, "");
+  const from = process.env.MAIL_FROM?.trim() || user;
+
+  if (!user || !pass || !from) {
+    return null;
+  }
+
+  return { from, pass, user };
+}
+
 async function sendConfirmationEmail(email: string, token: string) {
   const appUrl = process.env.APP_URL ?? `http://localhost:${process.env.PORT ?? 3001}`;
   const confirmationUrl = `${appUrl}/api/auth/confirm?token=${encodeURIComponent(token)}`;
+  const config = gmailConfig();
 
-  if (process.env.NODE_ENV === "production") {
-    console.info(`Email confirmation requested for ${email}. Configure an email provider to deliver confirmation links.`);
-    return;
+  if (!config && process.env.NODE_ENV === "production") {
+    throw new Error("Gmail credentials are required to send confirmation emails in production.");
+  }
+
+  if (config) {
+    try {
+      const transporter = nodemailer.createTransport({
+        auth: {
+          pass: config.pass,
+          user: config.user,
+        },
+        service: "gmail",
+      });
+
+      await transporter.sendMail({
+        from: config.from,
+        html: [
+          "<p>Hallo,</p>",
+          "<p>bitte bestaetige deinen StudentGo Account mit diesem Bestaetigungscode:</p>",
+          `<p><strong>${token}</strong></p>`,
+          "<p>Alternativ kannst du den folgenden Link oeffnen:</p>",
+          `<p><a href="${confirmationUrl}">${confirmationUrl}</a></p>`,
+          `<p>Der Code ist ${CONFIRMATION_HOURS} Stunde gueltig.</p>`,
+        ].join(""),
+        subject: "StudentGo Account bestaetigen",
+        text: [
+          "Hallo,",
+          "",
+          "bitte bestaetige deinen StudentGo Account mit diesem Bestaetigungscode:",
+          token,
+          "",
+          "Alternativ kannst du den folgenden Link oeffnen:",
+          confirmationUrl,
+          "",
+          `Der Code ist ${CONFIRMATION_HOURS} Stunde gueltig.`,
+        ].join("\n"),
+        to: email,
+      });
+
+      return;
+    } catch (error) {
+      if (process.env.NODE_ENV === "production") {
+        throw error;
+      }
+
+      console.warn("Gmail confirmation email could not be sent. Falling back to local confirmation logs.", error);
+    }
   }
 
   console.info(`Email confirmation for ${email}: ${confirmationUrl}`);
@@ -159,7 +227,7 @@ export async function createPendingAccount(data: {
   role: Role;
 }) {
   const passwordData = await hashPassword(data.password);
-  const confirmationToken = randomBytes(32).toString("base64url");
+  const confirmationToken = createConfirmationCode();
 
   const pendingAccount = await authRepository.createPendingAccount({
     confirmationTokenHash: hashConfirmationToken(confirmationToken),
@@ -307,10 +375,14 @@ export async function registerAccount(body: unknown) {
 }
 
 export async function confirmAccount(tokenInput: unknown) {
-  const confirmationToken = typeof tokenInput === "string" ? tokenInput.trim() : "";
+  const confirmationToken = typeof tokenInput === "string" ? normalizeConfirmationCode(tokenInput) : "";
 
   if (!confirmationToken) {
     throw badRequest("Confirmation token is required.");
+  }
+
+  if (confirmationToken.length !== CONFIRMATION_CODE_DIGITS) {
+    throw badRequest("Confirmation token must contain 8 digits.");
   }
 
   const user = await confirmPendingAccount(confirmationToken);

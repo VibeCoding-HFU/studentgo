@@ -399,7 +399,7 @@ export default function AccountScreen() {
       onRoleChange={setRole}
       onSubmit={submit}
       onTogglePreference={togglePreference}
-      onTokenChange={setConfirmationToken}
+      onTokenChange={(token) => setConfirmationToken(token.replace(/\D/g, '').slice(0, 8))}
       password={password}
       role={role}
     />
