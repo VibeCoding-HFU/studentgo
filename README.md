@@ -155,4 +155,12 @@ Weitere Checks:
 
 ```bash
 npm run lint
+npm run typecheck
+npm test
+```
+
+Die GitHub-Actions-Pipeline kann lokal mit [`act`](https://github.com/nektos/act) ausgefuehrt werden:
+
+```bash
+bash scripts/run-actions-local.sh
 ```
