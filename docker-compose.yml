@@ -12,6 +12,9 @@ services:
       CORS_ORIGIN: "${DOCKER_CORS_ORIGIN:-http://localhost:8080}"
       APP_URL: "${DOCKER_APP_URL:-http://localhost:8080}"
       MENSA_API_KEY: "${MENSA_API_KEY:-}"
+      GMAIL_USER: "${GMAIL_USER:-}"
+      GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD:-}"
+      MAIL_FROM: "${MAIL_FROM:-}"
     volumes:
       - studentgo-dev-data:/data
     healthcheck:

@@ -10,6 +10,9 @@ services:
       CORS_ORIGIN: "${DOCKER_CORS_ORIGIN:?Set DOCKER_CORS_ORIGIN to the public web origin}"
       APP_URL: "${DOCKER_APP_URL:?Set DOCKER_APP_URL to the public web URL}"
       MENSA_API_KEY: "${MENSA_API_KEY:-}"
+      GMAIL_USER: "${GMAIL_USER:?Set GMAIL_USER}"
+      GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD:?Set GMAIL_APP_PASSWORD}"
+      MAIL_FROM: "${MAIL_FROM:?Set MAIL_FROM}"
     volumes:
       - studentgo-data:/data
     healthcheck:
